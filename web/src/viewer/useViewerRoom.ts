@@ -2,8 +2,19 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type SimplePeer from 'simple-peer'
 import type { Socket } from 'socket.io-client'
 import { appConfig, type IceServer } from '../config'
-import { assertWebRtcSupport, createViewerPeer, detectSelectedCandidateType, getIceServers, type PeerInstance } from '../shared/rtc'
-import { createSocket } from '../shared/socket'
+import {
+  assertWebRtcSupport,
+  createViewerPeer,
+  detectSelectedCandidateType,
+  getIceServers,
+  isBenignPeerTeardownError,
+  type PeerInstance
+} from '../shared/rtc'
+import {
+  createSocket,
+  formatSocketConnectError,
+  SOCKET_HANDSHAKE_STALL_HINT
+} from '../shared/socket'
 import type { ConnectionStatus } from '../shared/status'
 
 interface SignalMessage {
@@ -34,6 +45,7 @@ export function useViewerRoom(roomId: string) {
   const cameraSocketIdRef = useRef<string | null>(null)
   const iceServersRef = useRef<IceServer[]>([])
   const remoteStreamRef = useRef<MediaStream | null>(null)
+  const socketHandshakeWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const destroyPeer = useCallback(() => {
     peerRef.current?.destroy()
@@ -84,6 +96,10 @@ export function useViewerRoom(roomId: string) {
     })
 
     peer.on('error', (peerError) => {
+      if (isBenignPeerTeardownError(peerError)) {
+        setStatus('disconnected')
+        return
+      }
       setStatus('error')
       setError(peerError.message)
     })
@@ -101,7 +117,25 @@ export function useViewerRoom(roomId: string) {
       const socket = createSocket()
       socketRef.current = socket
 
+      const clearHandshakeWatchdog = () => {
+        if (socketHandshakeWatchdogRef.current) {
+          clearTimeout(socketHandshakeWatchdogRef.current)
+          socketHandshakeWatchdogRef.current = null
+        }
+      }
+
+      socketHandshakeWatchdogRef.current = setTimeout(() => {
+        socketHandshakeWatchdogRef.current = null
+        if (socket.connected) {
+          return
+        }
+        setError(SOCKET_HANDSHAKE_STALL_HINT)
+        setStatus('error')
+        socket.disconnect()
+      }, 14_000)
+
       socket.on('connect', () => {
+        clearHandshakeWatchdog()
         setSocketConnected(true)
         setStatus('waiting-camera')
         socket.emit('join-room', {
@@ -109,6 +143,12 @@ export function useViewerRoom(roomId: string) {
           role: 'viewer',
           token: appConfig.roomToken
         })
+      })
+
+      socket.on('connect_error', (err) => {
+        clearHandshakeWatchdog()
+        setError(formatSocketConnectError(err instanceof Error ? err : new Error(String(err))))
+        setStatus('error')
       })
 
       socket.on('disconnect', () => {
@@ -146,6 +186,11 @@ export function useViewerRoom(roomId: string) {
   }, [destroyPeer, ensurePeer, roomId])
 
   const stop = useCallback(() => {
+    if (socketHandshakeWatchdogRef.current) {
+      clearTimeout(socketHandshakeWatchdogRef.current)
+      socketHandshakeWatchdogRef.current = null
+    }
+
     destroyPeer()
     socketRef.current?.disconnect()
     socketRef.current = null

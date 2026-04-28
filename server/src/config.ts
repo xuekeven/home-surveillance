@@ -25,7 +25,7 @@ function parseInteger(value: string | undefined, fallback: number): number {
 
 function parseOrigins(value: string | undefined): string[] {
   if (!value) {
-    return ['http://localhost:5173', 'http://localhost:3333']
+    return ['http://localhost:5173', 'http://localhost:3000']
   }
 
   return value
@@ -71,12 +71,22 @@ function normalizeBasePath(value: string | undefined): string {
 
 export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
-  port: parseInteger(process.env.PORT, 3333),
+  port: parseInteger(process.env.PORT, 3000),
   publicBasePath: normalizeBasePath(process.env.PUBLIC_BASE_PATH),
   roomToken: process.env.ROOM_TOKEN || 'change-me',
   maxViewersPerRoom: parseInteger(process.env.MAX_VIEWERS_PER_ROOM, 2),
   allowedOrigins: parseOrigins(process.env.ALLOWED_ORIGINS),
   iceServers: parseIceServers(process.env.ICE_SERVERS_JSON)
+}
+
+/** Express REST：`/api/*` 或 `{PUBLIC_BASE_PATH}/api/*` */
+export function apiMountPrefix(publicBasePath: string): string {
+  return publicBasePath ? `${publicBasePath}/api` : '/api'
+}
+
+/** Socket.IO 引擎路径（须与前端 `socket.io-client` path 一致） */
+export function socketIoHttpPath(publicBasePath: string): string {
+  return publicBasePath ? `${publicBasePath}/socket.io/` : '/socket.io/'
 }
 
 export function isAllowedOrigin(origin: string | undefined): boolean {

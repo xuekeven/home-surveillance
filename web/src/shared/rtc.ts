@@ -1,5 +1,5 @@
 import SimplePeer from 'simple-peer'
-import { appConfig, type IceServer } from '../config'
+import { apiIceServersUrl, appConfig, type IceServer } from '../config'
 
 export type PeerInstance = SimplePeer.Instance
 
@@ -82,6 +82,14 @@ export function getWebRtcSupportReport(): string {
   ].join(', ')
 }
 
+/** 主动 destroy / 页面卸载时 Chromium 常见「假错误」，不应占满 UI */
+export function isBenignPeerTeardownError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error)
+  return /User-Initiated Abort|Close called|The operation was aborted|Connection was closed before/.test(
+    msg
+  )
+}
+
 export function assertWebRtcSupport(): WebRtcConstructors {
   const wrtc = getBrowserWebRtc()
   if (!wrtc) {
@@ -93,7 +101,7 @@ export function assertWebRtcSupport(): WebRtcConstructors {
 
 export async function getIceServers(): Promise<IceServer[]> {
   try {
-    const response = await fetch('/api/ice-servers')
+    const response = await fetch(apiIceServersUrl())
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`)
     }

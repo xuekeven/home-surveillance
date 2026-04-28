@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import express from 'express'
 import http from 'node:http'
 import { Server } from 'socket.io'
-import { config, isAllowedOrigin } from './config.js'
+import { apiMountPrefix, config, isAllowedOrigin, socketIoHttpPath } from './config.js'
 import { registerSocketHandlers } from './socket.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -11,7 +11,10 @@ const __dirname = path.dirname(__filename)
 
 const app = express()
 const server = http.createServer(app)
+const socketPath = socketIoHttpPath(config.publicBasePath)
+
 const io = new Server(server, {
+  path: socketPath,
   cors: {
     origin(origin, callback) {
       if (isAllowedOrigin(origin)) {
@@ -26,11 +29,18 @@ const io = new Server(server, {
 
 app.disable('x-powered-by')
 
-app.get('/healthz', (_request, response) => {
+const sendHealth = (_request: express.Request, response: express.Response) => {
   response.json({ ok: true })
-})
+}
 
-app.get('/api/ice-servers', (_request, response) => {
+app.get('/healthz', sendHealth)
+if (config.publicBasePath) {
+  app.get(`${config.publicBasePath}/healthz`, sendHealth)
+}
+
+const apiPrefix = apiMountPrefix(config.publicBasePath)
+
+app.get(`${apiPrefix}/ice-servers`, (_request, response) => {
   response.json({ iceServers: config.iceServers })
 })
 
@@ -47,5 +57,7 @@ if (config.nodeEnv === 'production') {
 }
 
 server.listen(config.port, () => {
-  console.log(`home-surveillance server listening on http://localhost:${config.port}`)
+  console.log(
+    `home-surveillance listening on http://localhost:${config.port} (api ${apiPrefix} socket.io path ${socketPath})`
+  )
 })

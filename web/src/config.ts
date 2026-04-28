@@ -37,10 +37,21 @@ function parseIceServers(value: string | undefined): IceServer[] {
   }
 }
 
+const publicBasePath = normalizeBasePath(import.meta.env.VITE_PUBLIC_BASE_PATH)
+
+function defaultSocketPath(): string {
+  return publicBasePath ? `${publicBasePath}/socket.io/` : '/socket.io/'
+}
+
 export const appConfig = {
-  publicBasePath: normalizeBasePath(import.meta.env.VITE_PUBLIC_BASE_PATH),
+  publicBasePath,
   socketUrl: import.meta.env.VITE_SOCKET_URL || undefined,
-  socketPath: import.meta.env.VITE_SOCKET_PATH || '/socket.io/',
+  socketPath: import.meta.env.VITE_SOCKET_PATH || defaultSocketPath(),
   roomToken: import.meta.env.VITE_ROOM_TOKEN || 'change-me',
   fallbackIceServers: parseIceServers(import.meta.env.VITE_ICE_SERVERS_JSON)
+}
+
+/** 与 PUBLIC_BASE_PATH / server `apiMountPrefix` 对齐 */
+export function apiIceServersUrl(): string {
+  return publicBasePath ? `${publicBasePath}/api/ice-servers` : '/api/ice-servers'
 }
