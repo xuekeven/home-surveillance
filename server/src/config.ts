@@ -1,5 +1,13 @@
-import 'dotenv/config'
+import { config as loadDotenv } from 'dotenv'
 import type { IceServer } from './types.js'
+import { applyEcosystemDevelopmentEnv } from './loadEcosystemDevEnv.js'
+
+// 生产：PM2 使用 ecosystem.config.cjs 的 env。
+// 开发：同一文件的 env_development；可选根目录 .env 覆盖（dotenv 默认不覆盖已有变量）。
+if (process.env.NODE_ENV !== 'production') {
+  applyEcosystemDevelopmentEnv()
+  loadDotenv()
+}
 
 const DEFAULT_ICE_SERVERS: IceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -17,7 +25,7 @@ function parseInteger(value: string | undefined, fallback: number): number {
 
 function parseOrigins(value: string | undefined): string[] {
   if (!value) {
-    return ['http://localhost:5173', 'http://localhost:3000']
+    return ['http://localhost:5173', 'http://localhost:3333']
   }
 
   return value
@@ -63,7 +71,7 @@ function normalizeBasePath(value: string | undefined): string {
 
 export const config = {
   nodeEnv: process.env.NODE_ENV || 'development',
-  port: parseInteger(process.env.PORT, 3000),
+  port: parseInteger(process.env.PORT, 3333),
   publicBasePath: normalizeBasePath(process.env.PUBLIC_BASE_PATH),
   roomToken: process.env.ROOM_TOKEN || 'change-me',
   maxViewersPerRoom: parseInteger(process.env.MAX_VIEWERS_PER_ROOM, 2),

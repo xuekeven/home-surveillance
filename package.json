@@ -7,8 +7,9 @@
     "web"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev -w server\" \"npm run dev -w web\"",
+    "dev": "node scripts/run-dev.mjs",
     "build": "npm run build -w web && npm run build -w server",
+    "build:homeserver": "VITE_PUBLIC_BASE_PATH=/surveillance npm run build -w web && npm run build -w server",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
     "start": "npm run start -w server"
   },
