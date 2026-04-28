@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "node scripts/run-dev.mjs",
     "build": "npm run build -w web && npm run build -w server",
-    "build:homeserver": "VITE_PUBLIC_BASE_PATH=/surveillance npm run build -w web && npm run build -w server",
+    "build:homeserver": "node scripts/build-homeserver.mjs",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
     "start": "npm run start -w server"
   },
