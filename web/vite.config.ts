@@ -3,6 +3,15 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   base: process.env.VITE_PUBLIC_BASE_PATH || '/',
+  define: {
+    global: 'globalThis'
+  },
+  resolve: {
+    alias: {
+      events: 'events/',
+      buffer: 'buffer/'
+    }
+  },
   plugins: [react()],
   server: {
     port: 5173,

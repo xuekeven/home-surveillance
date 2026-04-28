@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type SimplePeer from 'simple-peer'
 import type { Socket } from 'socket.io-client'
 import { appConfig, type IceServer } from '../config'
-import { createViewerPeer, detectSelectedCandidateType, getIceServers, type PeerInstance } from '../shared/rtc'
+import { assertWebRtcSupport, createViewerPeer, detectSelectedCandidateType, getIceServers, type PeerInstance } from '../shared/rtc'
 import { createSocket } from '../shared/socket'
 import type { ConnectionStatus } from '../shared/status'
 
@@ -96,6 +96,7 @@ export function useViewerRoom(roomId: string) {
     setStatus('connecting-socket')
 
     try {
+      assertWebRtcSupport()
       iceServersRef.current = await getIceServers()
       const socket = createSocket()
       socketRef.current = socket

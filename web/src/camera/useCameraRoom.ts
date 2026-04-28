@@ -4,7 +4,7 @@ import type { Socket } from 'socket.io-client'
 import { appConfig, type IceServer } from '../config'
 import { createSocket } from '../shared/socket'
 import type { ConnectionStatus } from '../shared/status'
-import { createCameraPeer, detectSelectedCandidateType, getIceServers, type PeerInstance } from '../shared/rtc'
+import { assertWebRtcSupport, createCameraPeer, detectSelectedCandidateType, getIceServers, type PeerInstance } from '../shared/rtc'
 
 interface ViewerInfo {
   socketId: string
@@ -114,6 +114,7 @@ export function useCameraRoom(roomId: string) {
       if (!window.isSecureContext) {
         throw new Error('当前页面不是 HTTPS 安全上下文，浏览器可能拒绝摄像头权限')
       }
+      assertWebRtcSupport()
 
       const [iceServers, stream] = await Promise.all([
         getIceServers(),
