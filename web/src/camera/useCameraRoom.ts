@@ -1,0 +1,214 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+import type SimplePeer from 'simple-peer'
+import type { Socket } from 'socket.io-client'
+import { appConfig, type IceServer } from '../config'
+import { createSocket } from '../shared/socket'
+import type { ConnectionStatus } from '../shared/status'
+import { createCameraPeer, detectSelectedCandidateType, getIceServers, type PeerInstance } from '../shared/rtc'
+
+interface ViewerInfo {
+  socketId: string
+  status: ConnectionStatus
+  candidateType?: string
+}
+
+interface SignalMessage {
+  from: string
+  signal: SimplePeer.SignalData
+}
+
+interface ViewerJoinedMessage {
+  viewerSocketId: string
+}
+
+interface ViewerLeftMessage {
+  viewerSocketId: string
+}
+
+interface RoomErrorMessage {
+  message: string
+}
+
+export function useCameraRoom(roomId: string) {
+  const [status, setStatus] = useState<ConnectionStatus>('idle')
+  const [error, setError] = useState<string>()
+  const [localStream, setLocalStream] = useState<MediaStream>()
+  const [isSecureContextValue] = useState(window.isSecureContext)
+  const [socketConnected, setSocketConnected] = useState(false)
+  const [viewers, setViewers] = useState<ViewerInfo[]>([])
+
+  const socketRef = useRef<Socket | null>(null)
+  const streamRef = useRef<MediaStream | null>(null)
+  const iceServersRef = useRef<IceServer[]>([])
+  const peersRef = useRef<Map<string, PeerInstance>>(new Map())
+
+  const updateViewer = useCallback((socketId: string, patch: Partial<ViewerInfo>) => {
+    setViewers((current) => {
+      const existing = current.find((viewer) => viewer.socketId === socketId)
+      if (!existing) {
+        return [...current, { socketId, status: 'idle', ...patch }]
+      }
+
+      return current.map((viewer) =>
+        viewer.socketId === socketId ? { ...viewer, ...patch } : viewer
+      )
+    })
+  }, [])
+
+  const destroyPeer = useCallback((viewerSocketId: string) => {
+    const peer = peersRef.current.get(viewerSocketId)
+    if (peer) {
+      peer.destroy()
+      peersRef.current.delete(viewerSocketId)
+    }
+
+    setViewers((current) => current.filter((viewer) => viewer.socketId !== viewerSocketId))
+  }, [])
+
+  const createPeerForViewer = useCallback((viewerSocketId: string) => {
+    const socket = socketRef.current
+    const stream = streamRef.current
+    if (!socket || !stream) {
+      return
+    }
+
+    destroyPeer(viewerSocketId)
+    updateViewer(viewerSocketId, { status: 'connecting-webrtc' })
+
+    const peer = createCameraPeer(stream, iceServersRef.current)
+    peersRef.current.set(viewerSocketId, peer)
+
+    peer.on('signal', (signal) => {
+      socket.emit('signal', {
+        roomId,
+        to: viewerSocketId,
+        signal
+      })
+    })
+
+    peer.on('connect', () => {
+      updateViewer(viewerSocketId, { status: 'connected' })
+      void detectSelectedCandidateType(peer).then((candidateType) => {
+        if (candidateType) {
+          updateViewer(viewerSocketId, { candidateType })
+        }
+      })
+    })
+
+    peer.on('close', () => {
+      updateViewer(viewerSocketId, { status: 'disconnected' })
+      peersRef.current.delete(viewerSocketId)
+    })
+
+    peer.on('error', (peerError) => {
+      updateViewer(viewerSocketId, { status: 'error' })
+      setError(peerError.message)
+    })
+  }, [destroyPeer, roomId, updateViewer])
+
+  const start = useCallback(async () => {
+    setError(undefined)
+    setStatus('connecting-socket')
+
+    try {
+      if (!window.isSecureContext) {
+        throw new Error('当前页面不是 HTTPS 安全上下文，浏览器可能拒绝摄像头权限')
+      }
+
+      const [iceServers, stream] = await Promise.all([
+        getIceServers(),
+        navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 20, max: 30 }
+          },
+          audio: false
+        })
+      ])
+
+      iceServersRef.current = iceServers
+      streamRef.current = stream
+      setLocalStream(stream)
+
+      const socket = createSocket()
+      socketRef.current = socket
+
+      socket.on('connect', () => {
+        setSocketConnected(true)
+        setStatus('waiting-viewer')
+        socket.emit('join-room', {
+          roomId,
+          role: 'camera',
+          token: appConfig.roomToken
+        })
+      })
+
+      socket.on('disconnect', () => {
+        setSocketConnected(false)
+        setStatus('disconnected')
+      })
+
+      socket.on('viewer-joined', ({ viewerSocketId }: ViewerJoinedMessage) => {
+        createPeerForViewer(viewerSocketId)
+      })
+
+      socket.on('viewer-left', ({ viewerSocketId }: ViewerLeftMessage) => {
+        destroyPeer(viewerSocketId)
+      })
+
+      socket.on('signal', ({ from, signal }: SignalMessage) => {
+        peersRef.current.get(from)?.signal(signal)
+      })
+
+      socket.on('room-error', ({ message }: RoomErrorMessage) => {
+        setError(message)
+        setStatus('error')
+      })
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : '采集端启动失败')
+      setStatus('error')
+    }
+  }, [createPeerForViewer, destroyPeer, roomId])
+
+  const stop = useCallback(() => {
+    for (const peer of peersRef.current.values()) {
+      peer.destroy()
+    }
+    peersRef.current.clear()
+
+    socketRef.current?.disconnect()
+    socketRef.current = null
+
+    streamRef.current?.getTracks().forEach((track) => track.stop())
+    streamRef.current = null
+    setLocalStream(undefined)
+    setViewers([])
+    setSocketConnected(false)
+    setStatus('idle')
+  }, [])
+
+  const restart = useCallback(() => {
+    stop()
+    window.setTimeout(() => {
+      void start()
+    }, 0)
+  }, [start, stop])
+
+  useEffect(() => {
+    void start()
+    return () => stop()
+  }, [start, stop])
+
+  return {
+    status,
+    error,
+    localStream,
+    isSecureContext: isSecureContextValue,
+    socketConnected,
+    viewers,
+    restart,
+    stop
+  }
+}
