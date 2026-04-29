@@ -35,6 +35,7 @@ module.exports = {
         ALLOWED_ORIGINS: [
           'https://homeserver.tailed5977.ts.net',
           'https://www.kaitool.top',
+          'https://kaitool.top',
           'http://localhost:5173',
           'http://localhost:3333'
         ].join(','),
@@ -49,6 +50,7 @@ module.exports = {
         ALLOWED_ORIGINS: [
           'https://homeserver.tailed5977.ts.net',
           'https://www.kaitool.top',
+          'https://kaitool.top',
           'http://localhost:5173',
           'http://localhost:3333'
         ].join(','),

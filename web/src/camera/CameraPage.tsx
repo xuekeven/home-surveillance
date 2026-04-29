@@ -13,9 +13,15 @@ export function CameraPage() {
     isSecureContext,
     socketConnected,
     viewers,
+    cameraDevices,
+    activeCameraId,
+    switchingCamera,
+    switchCamera,
     restart,
     stop
   } = useCameraRoom(roomId)
+
+  const selectValue = activeCameraId || cameraDevices[0]?.deviceId || ''
 
   useEffect(() => {
     if (videoRef.current && localStream) {
@@ -31,6 +37,26 @@ export function CameraPage() {
         <p className="muted">房间：{roomId}</p>
 
         <video ref={videoRef} className="video" muted playsInline autoPlay />
+
+        {cameraDevices.length > 1 ? (
+          <div className="camera-switch">
+            <label htmlFor="camera-device">摄像头</label>
+            <select
+              id="camera-device"
+              disabled={switchingCamera}
+              value={selectValue}
+              onChange={(event) => void switchCamera(event.target.value)}
+              aria-busy={switchingCamera}
+            >
+              {cameraDevices.map((device) => (
+                <option key={device.deviceId} value={device.deviceId}>
+                  {device.label}
+                </option>
+              ))}
+            </select>
+            {switchingCamera ? <span className="muted">切换中…</span> : null}
+          </div>
+        ) : null}
 
         <div className="grid">
           <StatusItem label="页面安全上下文" value={isSecureContext ? '是' : '否'} />

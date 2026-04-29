@@ -12,8 +12,11 @@ import {
   assertWebRtcSupport,
   createCameraPeer,
   detectSelectedCandidateType,
+  getCameraVideoMediaStreamByDeviceId,
   getIceServers,
   isBenignPeerTeardownError,
+  listVideoInputDevices,
+  replaceOutgoingVideoTrackForPeers,
   type PeerInstance
 } from '../shared/rtc'
 
@@ -40,6 +43,11 @@ interface RoomErrorMessage {
   message: string
 }
 
+export interface CameraDeviceOption {
+  deviceId: string
+  label: string
+}
+
 export function useCameraRoom(roomId: string) {
   const [status, setStatus] = useState<ConnectionStatus>('idle')
   const [error, setError] = useState<string>()
@@ -47,12 +55,34 @@ export function useCameraRoom(roomId: string) {
   const [isSecureContextValue] = useState(window.isSecureContext)
   const [socketConnected, setSocketConnected] = useState(false)
   const [viewers, setViewers] = useState<ViewerInfo[]>([])
+  const [cameraDevices, setCameraDevices] = useState<CameraDeviceOption[]>([])
+  const [activeCameraId, setActiveCameraId] = useState('')
+  const [switchingCamera, setSwitchingCamera] = useState(false)
 
   const socketRef = useRef<Socket | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const iceServersRef = useRef<IceServer[]>([])
   const peersRef = useRef<Map<string, PeerInstance>>(new Map())
   const socketHandshakeWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const refreshCameraCatalog = useCallback(async (stream: MediaStream) => {
+    try {
+      const devices = await listVideoInputDevices()
+      const mapped = devices.map((d, i) => ({
+        deviceId: d.deviceId,
+        label: d.label.trim() || `摄像头 ${i + 1}`
+      }))
+      setCameraDevices(mapped)
+      const sid = stream.getVideoTracks()[0]?.getSettings().deviceId
+      if (sid) {
+        setActiveCameraId(sid)
+      } else if (mapped[0]) {
+        setActiveCameraId(mapped[0].deviceId)
+      }
+    } catch {
+      setCameraDevices([])
+    }
+  }, [])
 
   const updateViewer = useCallback((socketId: string, patch: Partial<ViewerInfo>) => {
     setViewers((current) => {
@@ -148,6 +178,7 @@ export function useCameraRoom(roomId: string) {
       iceServersRef.current = iceServers
       streamRef.current = stream
       setLocalStream(stream)
+      void refreshCameraCatalog(stream)
 
       const socket = createSocket()
       socketRef.current = socket
@@ -211,7 +242,56 @@ export function useCameraRoom(roomId: string) {
       setError(startError instanceof Error ? startError.message : '采集端启动失败')
       setStatus('error')
     }
-  }, [createPeerForViewer, destroyPeer, roomId])
+  }, [createPeerForViewer, destroyPeer, refreshCameraCatalog, roomId])
+
+  const switchCamera = useCallback(
+    async (deviceId: string) => {
+      if (!deviceId || deviceId === activeCameraId || switchingCamera || !streamRef.current) {
+        return
+      }
+
+      setSwitchingCamera(true)
+      setError(undefined)
+      let newStream: MediaStream | undefined
+      try {
+        newStream = await getCameraVideoMediaStreamByDeviceId(deviceId)
+        const newTrack = newStream.getVideoTracks()[0]
+        if (!newTrack) {
+          throw new Error('未拿到新的视频轨')
+        }
+
+        await replaceOutgoingVideoTrackForPeers(peersRef.current.values(), newTrack)
+
+        streamRef.current.getVideoTracks().forEach((track) => track.stop())
+        streamRef.current = newStream
+        setLocalStream(newStream)
+        setActiveCameraId(deviceId)
+        void refreshCameraCatalog(newStream)
+      } catch (switchErr) {
+        newStream?.getTracks().forEach((track) => track.stop())
+        setError(switchErr instanceof Error ? switchErr.message : '切换摄像头失败')
+      } finally {
+        setSwitchingCamera(false)
+      }
+    },
+    [activeCameraId, refreshCameraCatalog, switchingCamera]
+  )
+
+  useEffect(() => {
+    if (!localStream) {
+      return
+    }
+
+    const onDevicesChange = () => {
+      const s = streamRef.current
+      if (s) {
+        void refreshCameraCatalog(s)
+      }
+    }
+
+    navigator.mediaDevices.addEventListener('devicechange', onDevicesChange)
+    return () => navigator.mediaDevices.removeEventListener('devicechange', onDevicesChange)
+  }, [localStream, refreshCameraCatalog])
 
   const stop = useCallback(() => {
     if (socketHandshakeWatchdogRef.current) {
@@ -231,6 +311,9 @@ export function useCameraRoom(roomId: string) {
     streamRef.current = null
     setLocalStream(undefined)
     setViewers([])
+    setCameraDevices([])
+    setActiveCameraId('')
+    setSwitchingCamera(false)
     setSocketConnected(false)
     setStatus('idle')
   }, [])
@@ -254,6 +337,10 @@ export function useCameraRoom(roomId: string) {
     isSecureContext: isSecureContextValue,
     socketConnected,
     viewers,
+    cameraDevices,
+    activeCameraId,
+    switchingCamera,
+    switchCamera,
     restart,
     stop
   }
