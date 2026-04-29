@@ -8,8 +8,10 @@ import {
   SOCKET_HANDSHAKE_STALL_HINT
 } from '../shared/socket'
 import type { ConnectionStatus } from '../shared/status'
+import type { CameraDeviceOption } from '../shared/cameraDeviceToolbar'
 import {
   assertWebRtcSupport,
+  boostOutgoingVideoEncodingForPeers,
   createCameraPeer,
   detectSelectedCandidateType,
   getCameraCaptureStream,
@@ -44,9 +46,9 @@ interface RoomErrorMessage {
   message: string
 }
 
-export interface CameraDeviceOption {
+interface ViewerSwitchCameraMessage {
   deviceId: string
-  label: string
+  viewerSocketId: string
 }
 
 export function useCameraRoom(roomId: string) {
@@ -67,24 +69,33 @@ export function useCameraRoom(roomId: string) {
   const socketHandshakeWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [viewerInboundAudio, setViewerInboundAudio] = useState<Record<string, MediaStream>>({})
 
-  const refreshCameraCatalog = useCallback(async (stream: MediaStream) => {
-    try {
-      const devices = await listVideoInputDevices()
-      const mapped = devices.map((d, i) => ({
-        deviceId: d.deviceId,
-        label: d.label.trim() || `摄像头 ${i + 1}`
-      }))
-      setCameraDevices(mapped)
-      const sid = stream.getVideoTracks()[0]?.getSettings().deviceId
-      if (sid) {
-        setActiveCameraId(sid)
-      } else if (mapped[0]) {
-        setActiveCameraId(mapped[0].deviceId)
+  const refreshCameraCatalog = useCallback(
+    async (stream: MediaStream) => {
+      try {
+        const devices = await listVideoInputDevices()
+        const mapped = devices.map((d, i) => ({
+          deviceId: d.deviceId,
+          label: d.label.trim() || `摄像头 ${i + 1}`
+        }))
+        setCameraDevices(mapped)
+        const sid = stream.getVideoTracks()[0]?.getSettings().deviceId
+        const nextActive = sid || mapped[0]?.deviceId || ''
+        setActiveCameraId(nextActive)
+
+        const socket = socketRef.current
+        if (socket?.connected) {
+          socket.emit('camera-catalog', {
+            roomId,
+            devices: mapped,
+            activeCameraId: nextActive
+          })
+        }
+      } catch {
+        setCameraDevices([])
       }
-    } catch {
-      setCameraDevices([])
-    }
-  }, [])
+    },
+    [roomId]
+  )
 
   const updateViewer = useCallback((socketId: string, patch: Partial<ViewerInfo>) => {
     setViewers((current) => {
@@ -118,57 +129,132 @@ export function useCameraRoom(roomId: string) {
     setViewers((current) => current.filter((viewer) => viewer.socketId !== viewerSocketId))
   }, [])
 
-  const createPeerForViewer = useCallback((viewerSocketId: string) => {
-    const socket = socketRef.current
-    const stream = streamRef.current
-    if (!socket || !stream) {
-      return
-    }
-
-    destroyPeer(viewerSocketId)
-    updateViewer(viewerSocketId, { status: 'connecting-webrtc' })
-
-    const peer = createCameraPeer(stream, iceServersRef.current)
-    peersRef.current.set(viewerSocketId, peer)
-
-    peer.on('signal', (signal) => {
-      socket.emit('signal', {
-        roomId,
-        to: viewerSocketId,
-        signal
-      })
-    })
-
-    peer.on('stream', (remoteStream: MediaStream) => {
-      if (remoteStream.getAudioTracks().length === 0) {
+  const createPeerForViewer = useCallback(
+    (viewerSocketId: string) => {
+      const socket = socketRef.current
+      const stream = streamRef.current
+      if (!socket || !stream) {
         return
       }
-      setViewerInboundAudio((prev) => ({ ...prev, [viewerSocketId]: remoteStream }))
-    })
 
-    peer.on('connect', () => {
-      updateViewer(viewerSocketId, { status: 'connected' })
-      void detectSelectedCandidateType(peer).then((candidateType) => {
-        if (candidateType) {
-          updateViewer(viewerSocketId, { candidateType })
+      destroyPeer(viewerSocketId)
+      updateViewer(viewerSocketId, { status: 'connecting-webrtc' })
+
+      const peer = createCameraPeer(stream, iceServersRef.current)
+      peersRef.current.set(viewerSocketId, peer)
+
+      peer.on('signal', (signal) => {
+        socket.emit('signal', {
+          roomId,
+          to: viewerSocketId,
+          signal
+        })
+      })
+
+      peer.on('stream', (remoteStream: MediaStream) => {
+        if (remoteStream.getAudioTracks().length > 0) {
+          setViewerInboundAudio((prev) => ({ ...prev, [viewerSocketId]: remoteStream }))
         }
       })
-    })
 
-    peer.on('close', () => {
-      updateViewer(viewerSocketId, { status: 'disconnected' })
-      peersRef.current.delete(viewerSocketId)
-    })
+      peer.on('connect', () => {
+        updateViewer(viewerSocketId, { status: 'connected' })
+        void detectSelectedCandidateType(peer).then((candidateType) => {
+          if (candidateType) {
+            updateViewer(viewerSocketId, { candidateType })
+          }
+        })
+        void boostOutgoingVideoEncodingForPeers([peer])
+      })
 
-    peer.on('error', (peerError) => {
-      if (isBenignPeerTeardownError(peerError)) {
+      peer.on('close', () => {
         updateViewer(viewerSocketId, { status: 'disconnected' })
+        peersRef.current.delete(viewerSocketId)
+      })
+
+      peer.on('error', (peerError) => {
+        if (isBenignPeerTeardownError(peerError)) {
+          updateViewer(viewerSocketId, { status: 'disconnected' })
+          return
+        }
+        updateViewer(viewerSocketId, { status: 'error' })
+        setError(peerError.message)
+      })
+    },
+    [destroyPeer, roomId, updateViewer]
+  )
+
+  const switchCamera = useCallback(
+    async (deviceId: string, options?: { viewerSocketId?: string }) => {
+      const viewerSocketId = options?.viewerSocketId
+
+      if (!deviceId || !streamRef.current) {
         return
       }
-      updateViewer(viewerSocketId, { status: 'error' })
-      setError(peerError.message)
-    })
-  }, [destroyPeer, roomId, updateViewer])
+
+      if (deviceId === activeCameraId) {
+        if (viewerSocketId && socketRef.current?.connected && streamRef.current) {
+          void refreshCameraCatalog(streamRef.current)
+        }
+        return
+      }
+
+      if (switchingCamera) {
+        return
+      }
+
+      setSwitchingCamera(true)
+      setError(undefined)
+      let newStream: MediaStream | undefined
+      try {
+        newStream = await getCameraVideoMediaStreamByDeviceId(deviceId)
+        const newVideoTrack = newStream.getVideoTracks()[0]
+        if (!newVideoTrack) {
+          throw new Error('未拿到新的视频轨')
+        }
+
+        await replaceOutgoingVideoTrackForPeers(peersRef.current.values(), newVideoTrack)
+
+        const prev = streamRef.current
+        const audioTracks = prev.getAudioTracks().filter((track) => track.readyState === 'live')
+
+        prev.getVideoTracks().forEach((track) => track.stop())
+
+        const combined = new MediaStream([newVideoTrack, ...audioTracks])
+        streamRef.current = combined
+        setLocalStream(combined)
+        setActiveCameraId(deviceId)
+        void refreshCameraCatalog(combined)
+        void boostOutgoingVideoEncodingForPeers(peersRef.current.values())
+      } catch (switchErr) {
+        newStream?.getTracks().forEach((track) => track.stop())
+        const msg = switchErr instanceof Error ? switchErr.message : '切换摄像头失败'
+        setError(msg)
+        if (viewerSocketId && socketRef.current?.connected) {
+          socketRef.current.emit('camera-switch-failed', { viewerSocketId, message: msg })
+        }
+      } finally {
+        setSwitchingCamera(false)
+      }
+    },
+    [activeCameraId, refreshCameraCatalog, switchingCamera]
+  )
+
+  useEffect(() => {
+    const socket = socketRef.current
+    if (!socketConnected || !socket) {
+      return undefined
+    }
+
+    const onViewerSwitchCamera = (payload: ViewerSwitchCameraMessage) => {
+      void switchCamera(payload.deviceId, { viewerSocketId: payload.viewerSocketId })
+    }
+
+    socket.on('viewer-switch-camera', onViewerSwitchCamera)
+    return () => {
+      socket.off('viewer-switch-camera', onViewerSwitchCamera)
+    }
+  }, [socketConnected, switchCamera])
 
   const start = useCallback(async () => {
     setError(undefined)
@@ -234,6 +320,10 @@ export function useCameraRoom(roomId: string) {
 
       socket.on('viewer-joined', ({ viewerSocketId }: ViewerJoinedMessage) => {
         createPeerForViewer(viewerSocketId)
+        const s = streamRef.current
+        if (s) {
+          void refreshCameraCatalog(s)
+        }
       })
 
       socket.on('viewer-left', ({ viewerSocketId }: ViewerLeftMessage) => {
@@ -253,44 +343,6 @@ export function useCameraRoom(roomId: string) {
       setStatus('error')
     }
   }, [createPeerForViewer, destroyPeer, refreshCameraCatalog, roomId])
-
-  const switchCamera = useCallback(
-    async (deviceId: string) => {
-      if (!deviceId || deviceId === activeCameraId || switchingCamera || !streamRef.current) {
-        return
-      }
-
-      setSwitchingCamera(true)
-      setError(undefined)
-      let newStream: MediaStream | undefined
-      try {
-        newStream = await getCameraVideoMediaStreamByDeviceId(deviceId)
-        const newVideoTrack = newStream.getVideoTracks()[0]
-        if (!newVideoTrack) {
-          throw new Error('未拿到新的视频轨')
-        }
-
-        await replaceOutgoingVideoTrackForPeers(peersRef.current.values(), newVideoTrack)
-
-        const prev = streamRef.current
-        const audioTracks = prev.getAudioTracks().filter((track) => track.readyState === 'live')
-
-        prev.getVideoTracks().forEach((track) => track.stop())
-
-        const combined = new MediaStream([newVideoTrack, ...audioTracks])
-        streamRef.current = combined
-        setLocalStream(combined)
-        setActiveCameraId(deviceId)
-        void refreshCameraCatalog(combined)
-      } catch (switchErr) {
-        newStream?.getTracks().forEach((track) => track.stop())
-        setError(switchErr instanceof Error ? switchErr.message : '切换摄像头失败')
-      } finally {
-        setSwitchingCamera(false)
-      }
-    },
-    [activeCameraId, refreshCameraCatalog, switchingCamera]
-  )
 
   useEffect(() => {
     if (!localStream) {

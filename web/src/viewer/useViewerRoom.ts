@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type SimplePeer from 'simple-peer'
 import type { Socket } from 'socket.io-client'
 import { appConfig, type IceServer } from '../config'
+import type { CameraDeviceOption } from '../shared/cameraDeviceToolbar'
 import {
   assertWebRtcSupport,
   createViewerPeer,
@@ -32,6 +33,15 @@ interface RoomStateMessage {
   viewerCount: number
 }
 
+interface CameraCatalogMessage {
+  devices: CameraDeviceOption[]
+  activeCameraId: string
+}
+
+interface CameraSwitchFailedMessage {
+  message: string
+}
+
 export function useViewerRoom(roomId: string) {
   const [status, setStatus] = useState<ConnectionStatus>('idle')
   const [error, setError] = useState<string>()
@@ -40,6 +50,10 @@ export function useViewerRoom(roomId: string) {
   const [cameraOnline, setCameraOnline] = useState(false)
   const [viewerCount, setViewerCount] = useState(0)
   const [candidateType, setCandidateType] = useState<string>()
+
+  const [cameraDevices, setCameraDevices] = useState<CameraDeviceOption[]>([])
+  const [activeCameraId, setActiveCameraId] = useState('')
+  const [switchingCamera, setSwitchingCamera] = useState(false)
 
   const socketRef = useRef<Socket | null>(null)
   const peerRef = useRef<PeerInstance | null>(null)
@@ -57,6 +71,12 @@ export function useViewerRoom(roomId: string) {
   useEffect(() => {
     micDesiredRef.current = dialogMicOn || pushMicHeld
   }, [dialogMicOn, pushMicHeld])
+
+  useEffect(() => {
+    if (dialogMicOn) {
+      setPushMicHeld(false)
+    }
+  }, [dialogMicOn])
 
   const syncViewerUpstreamMic = useCallback(async () => {
     const peer = peerRef.current
@@ -171,8 +191,12 @@ export function useViewerRoom(roomId: string) {
     setStatus('connecting-socket')
 
     try {
+      if (!window.isSecureContext) {
+        throw new Error('当前页面不是 HTTPS 安全上下文，对讲等功能可能不可用')
+      }
       assertWebRtcSupport()
       iceServersRef.current = await getIceServers()
+
       const socket = createSocket()
       socketRef.current = socket
 
@@ -223,6 +247,17 @@ export function useViewerRoom(roomId: string) {
         }
       })
 
+      socket.on('camera-catalog', ({ devices, activeCameraId: nextActive }: CameraCatalogMessage) => {
+        setCameraDevices(devices)
+        setActiveCameraId(nextActive)
+        setSwitchingCamera(false)
+      })
+
+      socket.on('camera-switch-failed', ({ message }: CameraSwitchFailedMessage) => {
+        setSwitchingCamera(false)
+        setError(message)
+      })
+
       socket.on('signal', ({ from, signal }: SignalMessage) => {
         const peer = ensurePeer(from)
         peer.signal(signal)
@@ -231,6 +266,9 @@ export function useViewerRoom(roomId: string) {
       socket.on('camera-left', () => {
         setCameraOnline(false)
         destroyPeer()
+        setCameraDevices([])
+        setActiveCameraId('')
+        setSwitchingCamera(false)
         setStatus('waiting-camera')
       })
 
@@ -248,6 +286,20 @@ export function useViewerRoom(roomId: string) {
     void syncViewerUpstreamMic()
   }, [dialogMicOn, pushMicHeld, syncViewerUpstreamMic])
 
+  const switchRemoteCamera = useCallback(
+    (deviceId: string) => {
+      const socket = socketRef.current
+      if (!deviceId || deviceId === activeCameraId || switchingCamera || !socket?.connected) {
+        return
+      }
+
+      setError(undefined)
+      setSwitchingCamera(true)
+      socket.emit('switch-camera', { roomId, deviceId })
+    },
+    [activeCameraId, roomId, switchingCamera]
+  )
+
   const stop = useCallback(() => {
     if (socketHandshakeWatchdogRef.current) {
       clearTimeout(socketHandshakeWatchdogRef.current)
@@ -260,6 +312,9 @@ export function useViewerRoom(roomId: string) {
     micAttachedToPeerRef.current = false
     setDialogMicOn(false)
     setPushMicHeld(false)
+    setCameraDevices([])
+    setActiveCameraId('')
+    setSwitchingCamera(false)
     socketRef.current?.disconnect()
     socketRef.current = null
     setSocketConnected(false)
@@ -292,6 +347,10 @@ export function useViewerRoom(roomId: string) {
     setDialogMicOn,
     pushMicHeld,
     setPushMicHeld,
+    cameraDevices,
+    activeCameraId,
+    switchingCamera,
+    switchRemoteCamera,
     restart,
     stop
   }

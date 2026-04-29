@@ -33,3 +33,24 @@ export interface PublicRoomState {
   hasCamera: boolean
   viewerCount: number
 }
+
+export interface CameraDeviceOptionPayload {
+  deviceId: string
+  label: string
+}
+
+export interface CameraCatalogPayload {
+  roomId: string
+  devices: CameraDeviceOptionPayload[]
+  activeCameraId: string
+}
+
+export interface SwitchCameraPayload {
+  roomId: string
+  deviceId: string
+}
+
+export interface SwitchFailedPayload {
+  viewerSocketId: string
+  message: string
+}

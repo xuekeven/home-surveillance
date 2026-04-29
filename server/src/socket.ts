@@ -12,7 +12,13 @@ import {
   removeClient,
   toPublicRoomState
 } from './rooms.js'
-import type { JoinRoomPayload, SignalPayload } from './types.js'
+import type {
+  CameraCatalogPayload,
+  JoinRoomPayload,
+  SignalPayload,
+  SwitchCameraPayload,
+  SwitchFailedPayload
+} from './types.js'
 
 function emitRoomState(io: Server, roomId: string): void {
   const state = toPublicRoomState(roomId)
@@ -42,6 +48,47 @@ function isJoinRoomPayload(payload: unknown): payload is JoinRoomPayload {
     isValidRole(candidate.role) &&
     typeof candidate.token === 'string'
   )
+}
+
+function isCameraCatalogPayload(payload: unknown): payload is CameraCatalogPayload {
+  if (!payload || typeof payload !== 'object') {
+    return false
+  }
+
+  const candidate = payload as Partial<CameraCatalogPayload>
+  if (!isValidRoomId(candidate.roomId) || typeof candidate.activeCameraId !== 'string') {
+    return false
+  }
+
+  if (!Array.isArray(candidate.devices)) {
+    return false
+  }
+
+  return candidate.devices.every(
+    (entry) =>
+      entry &&
+      typeof entry === 'object' &&
+      typeof (entry as { deviceId?: unknown }).deviceId === 'string' &&
+      typeof (entry as { label?: unknown }).label === 'string'
+  )
+}
+
+function isSwitchCameraPayload(payload: unknown): payload is SwitchCameraPayload {
+  if (!payload || typeof payload !== 'object') {
+    return false
+  }
+
+  const candidate = payload as Partial<SwitchCameraPayload>
+  return isValidRoomId(candidate.roomId) && typeof candidate.deviceId === 'string' && candidate.deviceId.length > 0
+}
+
+function isSwitchFailedPayload(payload: unknown): payload is SwitchFailedPayload {
+  if (!payload || typeof payload !== 'object') {
+    return false
+  }
+
+  const candidate = payload as Partial<SwitchFailedPayload>
+  return typeof candidate.viewerSocketId === 'string' && typeof candidate.message === 'string'
 }
 
 function isSignalPayload(payload: unknown): payload is SignalPayload {
@@ -109,6 +156,63 @@ function handleJoinRoom(io: Server, socket: Socket, payload: unknown): void {
   emitRoomState(io, payload.roomId)
 }
 
+function handleCameraCatalog(io: Server, socket: Socket, payload: unknown): void {
+  if (!isCameraCatalogPayload(payload)) {
+    return
+  }
+
+  const client = getClient(socket.id)
+  if (!client || client.role !== 'camera' || client.roomId !== payload.roomId) {
+    return
+  }
+
+  for (const viewerSocketId of listViewers(client.roomId)) {
+    io.to(viewerSocketId).emit('camera-catalog', {
+      devices: payload.devices,
+      activeCameraId: payload.activeCameraId
+    })
+  }
+}
+
+function handleSwitchCamera(io: Server, socket: Socket, payload: unknown): void {
+  if (!isSwitchCameraPayload(payload)) {
+    sendRoomError(socket, 'switch-camera 参数无效')
+    return
+  }
+
+  const client = getClient(socket.id)
+  if (!client || client.role !== 'viewer' || client.roomId !== payload.roomId) {
+    sendRoomError(socket, '当前连接尚未加入该房间或为采集端')
+    return
+  }
+
+  const cameraSocketId = getRoom(client.roomId)?.cameraSocketId
+  if (!cameraSocketId) {
+    sendRoomError(socket, '采集端不在线')
+    return
+  }
+
+  io.to(cameraSocketId).emit('viewer-switch-camera', {
+    deviceId: payload.deviceId,
+    viewerSocketId: socket.id
+  })
+}
+
+function handleCameraSwitchFailed(io: Server, socket: Socket, payload: unknown): void {
+  if (!isSwitchFailedPayload(payload)) {
+    return
+  }
+
+  const client = getClient(socket.id)
+  if (!client || client.role !== 'camera') {
+    return
+  }
+
+  io.to(payload.viewerSocketId).emit('camera-switch-failed', {
+    message: payload.message
+  })
+}
+
 function handleSignal(io: Server, socket: Socket, payload: unknown): void {
   if (!isSignalPayload(payload)) {
     sendRoomError(socket, 'signal 参数无效')
@@ -153,6 +257,9 @@ export function registerSocketHandlers(io: Server): void {
   io.on('connection', (socket) => {
     socket.on('join-room', (payload) => handleJoinRoom(io, socket, payload))
     socket.on('signal', (payload) => handleSignal(io, socket, payload))
+    socket.on('camera-catalog', (payload) => handleCameraCatalog(io, socket, payload))
+    socket.on('switch-camera', (payload) => handleSwitchCamera(io, socket, payload))
+    socket.on('camera-switch-failed', (payload) => handleCameraSwitchFailed(io, socket, payload))
     socket.on('disconnect', () => handleDisconnect(io, socket))
   })
 }

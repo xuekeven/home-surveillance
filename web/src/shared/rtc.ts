@@ -117,6 +117,53 @@ export async function getIceServers(): Promise<IceServer[]> {
   return appConfig.fallbackIceServers
 }
 
+/** 采集端摄像头采集约束（ideal，终端可按性能降级） */
+export const CAMERA_CAPTURE_VIDEO_CONSTRAINTS = {
+  facingMode: 'user' as const,
+  width: { ideal: 1920, min: 640 },
+  height: { ideal: 1080, min: 360 },
+  frameRate: { ideal: 30, max: 60 }
+}
+
+const SWITCH_CAMERA_VIDEO_CONSTRAINTS = {
+  width: { ideal: 1920, min: 640 },
+  height: { ideal: 1080, min: 360 },
+  frameRate: { ideal: 30, max: 60 }
+}
+
+const OUTGOING_VIDEO_MAX_BITRATE_BPS = 4_500_000
+
+/** 在协商完成后尽量抬高发送端视频码率上限（最终仍受采集与网络影响） */
+export async function boostOutgoingVideoEncodingForPeers(peers: Iterable<PeerInstance>): Promise<void> {
+  await Promise.all(
+    [...peers].map(async (peer) => {
+      const rtcPeer = peer as PeerInstance & { _pc?: RTCPeerConnection }
+      const pc = rtcPeer._pc
+      if (!pc) {
+        return
+      }
+
+      const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
+      if (!sender) {
+        return
+      }
+
+      try {
+        const params = sender.getParameters()
+        if (!params.encodings || params.encodings.length === 0) {
+          params.encodings = [{}]
+        }
+
+        const enc = params.encodings[0]
+        enc.maxBitrate = Math.max(enc.maxBitrate ?? 0, OUTGOING_VIDEO_MAX_BITRATE_BPS)
+        await sender.setParameters(params)
+      } catch {
+        // 协商未完成或不支持 setParameters 时忽略
+      }
+    })
+  )
+}
+
 /** 观看端上行麦克风（仅音频） */
 export async function getViewerMicMediaStream(): Promise<MediaStream> {
   return navigator.mediaDevices.getUserMedia({
@@ -129,23 +176,23 @@ export async function getViewerMicMediaStream(): Promise<MediaStream> {
   })
 }
 
-/** 采集端首次获取音视频；麦克风失败时降级为仅视频，避免整页不可用 */
+/** 采集端首次获取音视频；麦克风失败时降级为仅视频，避免整页不可用（默认前置摄像头） */
 export async function getCameraCaptureStream(): Promise<MediaStream> {
-  const video = {
-    facingMode: 'environment' as const,
-    width: { ideal: 1280 },
-    height: { ideal: 720 },
-    frameRate: { ideal: 20, max: 30 }
-  }
   const audio = {
     echoCancellation: true,
     noiseSuppression: true,
     autoGainControl: true
   }
   try {
-    return await navigator.mediaDevices.getUserMedia({ video, audio })
+    return await navigator.mediaDevices.getUserMedia({
+      video: CAMERA_CAPTURE_VIDEO_CONSTRAINTS,
+      audio
+    })
   } catch {
-    return navigator.mediaDevices.getUserMedia({ video, audio: false })
+    return navigator.mediaDevices.getUserMedia({
+      video: CAMERA_CAPTURE_VIDEO_CONSTRAINTS,
+      audio: false
+    })
   }
 }
 
@@ -204,19 +251,14 @@ export async function replaceOutgoingVideoTrackForPeers(
 }
 
 export async function getCameraVideoMediaStreamByDeviceId(deviceId: string): Promise<MediaStream> {
-  const base = {
-    width: { ideal: 1280 },
-    height: { ideal: 720 },
-    frameRate: { ideal: 20, max: 30 }
-  }
   try {
     return await navigator.mediaDevices.getUserMedia({
-      video: { ...base, deviceId: { exact: deviceId } },
+      video: { ...SWITCH_CAMERA_VIDEO_CONSTRAINTS, deviceId: { exact: deviceId } },
       audio: false
     })
   } catch {
     return navigator.mediaDevices.getUserMedia({
-      video: { ...base, deviceId: { ideal: deviceId } },
+      video: { ...SWITCH_CAMERA_VIDEO_CONSTRAINTS, deviceId: { ideal: deviceId } },
       audio: false
     })
   }

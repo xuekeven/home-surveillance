@@ -1,5 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
+import { applyAudioSinkToMedia, useSpeakerOutputSelection } from '../shared/audioSink'
+import { CameraDeviceToolbar } from '../shared/cameraDeviceToolbar'
+import { SpeakerOutputToolbar } from '../shared/speakerOutputToolbar'
 import { statusLabel } from '../shared/status'
 import { useViewerRoom } from './useViewerRoom'
 
@@ -18,11 +21,21 @@ export function ViewerPage() {
     setDialogMicOn,
     pushMicHeld,
     setPushMicHeld,
+    cameraDevices,
+    activeCameraId,
+    switchingCamera,
+    switchRemoteCamera,
     restart,
     stop
   } = useViewerRoom(roomId)
 
   const voiceReady = status === 'connected'
+
+  const {
+    devices: speakerDevices,
+    selectedDeviceId: selectedSpeakerId,
+    setSelectedDeviceId: setSelectedSpeakerId
+  } = useSpeakerOutputSelection()
 
   useEffect(() => {
     if (videoRef.current && remoteStream) {
@@ -32,6 +45,14 @@ export function ViewerPage() {
     }
   }, [remoteStream])
 
+  useEffect(() => {
+    const el = videoRef.current
+    if (!el || !remoteStream) {
+      return
+    }
+    void applyAudioSinkToMedia(el, selectedSpeakerId)
+  }, [remoteStream, selectedSpeakerId])
+
   return (
     <main className="page">
       <section className="panel">
@@ -39,13 +60,29 @@ export function ViewerPage() {
         <h1>观看端</h1>
         <p className="muted">房间：{roomId}</p>
 
+        <CameraDeviceToolbar
+          idPrefix="viewer"
+          label="采集端摄像头"
+          devices={cameraDevices}
+          activeCameraId={activeCameraId}
+          switchingCamera={switchingCamera}
+          onSelectDevice={(deviceId) => switchRemoteCamera(deviceId)}
+        />
+
         <video
           ref={videoRef}
-          className="video"
+          className="video viewer-remote-video"
           playsInline
           autoPlay
           controls
           muted={false}
+        />
+
+        <SpeakerOutputToolbar
+          idPrefix="viewer"
+          devices={speakerDevices}
+          selectedDeviceId={selectedSpeakerId}
+          onSelectDevice={setSelectedSpeakerId}
         />
 
         <div className="grid">
@@ -54,18 +91,20 @@ export function ViewerPage() {
           <StatusItem label="观看端状态" value={statusLabel(status)} />
           <StatusItem label="房间观看人数" value={`${viewerCount}`} />
           <StatusItem label="ICE 候选路径" value={candidateType || '未知'} />
-          <StatusItem label="对话采集" value={dialogMicOn ? '开启' : '关闭'} />
-          <StatusItem label="按住说话" value={pushMicHeld ? '采集中' : '未按下'} />
+          <StatusItem
+            label="对话采集"
+            value={dialogMicOn || pushMicHeld ? '开启' : '关闭'}
+          />
         </div>
 
         <div className="viewer-voice">
           <button
             type="button"
             className={`speak-btn${pushMicHeld ? ' active' : ''}`}
-            disabled={!voiceReady}
+            disabled={!voiceReady || dialogMicOn}
             onPointerDown={(event) => {
               event.preventDefault()
-              if (!voiceReady) {
+              if (!voiceReady || dialogMicOn) {
                 return
               }
               setPushMicHeld(true)
@@ -82,7 +121,7 @@ export function ViewerPage() {
             disabled={!voiceReady}
             onClick={() => setDialogMicOn((prev) => !prev)}
           >
-            {dialogMicOn ? '关闭对话' : '开始对话'}
+            {dialogMicOn ? '关闭对话' : '开启对话'}
           </button>
         </div>
         {!voiceReady ? (
@@ -93,7 +132,7 @@ export function ViewerPage() {
 
         <div className="actions">
           <button onClick={() => void restart()}>重新连接</button>
-          <button className="secondary" onClick={stop}>停止</button>
+          <button className="secondary" onClick={stop}>停止连接</button>
         </div>
       </section>
     </main>

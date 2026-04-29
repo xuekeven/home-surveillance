@@ -101,6 +101,11 @@ h2 {
   object-fit: contain;
 }
 
+.viewer-remote-video {
+  min-height: min(520px, 62vh);
+  max-height: min(85vh, 1080px);
+}
+
 .camera-switch {
   display: flex;
   flex-wrap: wrap;
@@ -130,8 +135,8 @@ h2 {
   opacity: 0.65;
 }
 
-.camera-audio-hint {
-  margin: 0 0 1rem;
+.speaker-unavailable-hint {
+  margin: 0 0 0.75rem;
   font-size: 0.88rem;
   line-height: 1.45;
 }
@@ -198,6 +203,11 @@ h2 {
 .speak-btn.active {
   background: #22c55e;
   color: #052e16;
+}
+
+.speak-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .viewer-remote-audios {

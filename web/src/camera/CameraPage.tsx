@@ -1,5 +1,8 @@
 import { useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
+import { applyAudioSinkToMedia, useSpeakerOutputSelection } from '../shared/audioSink'
+import { CameraDeviceToolbar } from '../shared/cameraDeviceToolbar'
+import { SpeakerOutputToolbar } from '../shared/speakerOutputToolbar'
 import { statusLabel } from '../shared/status'
 import { useCameraRoom } from './useCameraRoom'
 
@@ -22,7 +25,11 @@ export function CameraPage() {
     stop
   } = useCameraRoom(roomId)
 
-  const selectValue = activeCameraId || cameraDevices[0]?.deviceId || ''
+  const {
+    devices: speakerDevices,
+    selectedDeviceId: selectedSpeakerId,
+    setSelectedDeviceId: setSelectedSpeakerId
+  } = useSpeakerOutputSelection()
 
   useEffect(() => {
     if (videoRef.current && localStream) {
@@ -37,31 +44,22 @@ export function CameraPage() {
         <h1>采集端</h1>
         <p className="muted">房间：{roomId}</p>
 
+        <CameraDeviceToolbar
+          idPrefix="camera"
+          devices={cameraDevices}
+          activeCameraId={activeCameraId}
+          switchingCamera={switchingCamera}
+          onSelectDevice={(deviceId) => void switchCamera(deviceId)}
+        />
+
         <video ref={videoRef} className="video" muted playsInline autoPlay />
 
-        <p className="muted camera-audio-hint">
-          本地预览已静音以防啸叫；麦克风仍会传给观看端。请在浏览器里允许摄像头与麦克风权限。
-        </p>
-
-        {cameraDevices.length > 1 ? (
-          <div className="camera-switch">
-            <label htmlFor="camera-device">摄像头</label>
-            <select
-              id="camera-device"
-              disabled={switchingCamera}
-              value={selectValue}
-              onChange={(event) => void switchCamera(event.target.value)}
-              aria-busy={switchingCamera}
-            >
-              {cameraDevices.map((device) => (
-                <option key={device.deviceId} value={device.deviceId}>
-                  {device.label}
-                </option>
-              ))}
-            </select>
-            {switchingCamera ? <span className="muted">切换中…</span> : null}
-          </div>
-        ) : null}
+        <SpeakerOutputToolbar
+          idPrefix="camera"
+          devices={speakerDevices}
+          selectedDeviceId={selectedSpeakerId}
+          onSelectDevice={setSelectedSpeakerId}
+        />
 
         <div className="grid">
           <StatusItem label="页面安全上下文" value={isSecureContext ? '是' : '否'} />
@@ -78,7 +76,7 @@ export function CameraPage() {
 
         <div className="actions">
           <button onClick={() => void restart()}>重新启动采集</button>
-          <button className="secondary" onClick={stop}>停止</button>
+          <button className="secondary" onClick={stop}>停止当前采集</button>
         </div>
       </section>
 
@@ -104,14 +102,24 @@ export function CameraPage() {
 
       <div className="viewer-remote-audios" aria-hidden="true">
         {Object.entries(viewerInboundAudio).map(([viewerSocketId, stream]) => (
-          <ViewerRemoteAudioTrack key={viewerSocketId} stream={stream} />
+          <ViewerRemoteAudioTrack
+            key={viewerSocketId}
+            stream={stream}
+            outputDeviceId={selectedSpeakerId}
+          />
         ))}
       </div>
     </main>
   )
 }
 
-function ViewerRemoteAudioTrack({ stream }: { stream: MediaStream }) {
+function ViewerRemoteAudioTrack({
+  stream,
+  outputDeviceId
+}: {
+  stream: MediaStream
+  outputDeviceId: string
+}) {
   const ref = useRef<HTMLAudioElement>(null)
 
   useEffect(() => {
@@ -121,7 +129,8 @@ function ViewerRemoteAudioTrack({ stream }: { stream: MediaStream }) {
     }
     el.srcObject = stream
     void el.play().catch(() => {})
-  }, [stream])
+    void applyAudioSinkToMedia(el, outputDeviceId)
+  }, [stream, outputDeviceId])
 
   return <audio ref={ref} autoPlay playsInline />
 }
