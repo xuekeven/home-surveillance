@@ -38,6 +38,10 @@ export function CameraPage() {
 
         <video ref={videoRef} className="video" muted playsInline autoPlay />
 
+        <p className="muted camera-audio-hint">
+          本地预览已静音以防啸叫；麦克风仍会传给观看端。请在浏览器里允许摄像头与麦克风权限。
+        </p>
+
         {cameraDevices.length > 1 ? (
           <div className="camera-switch">
             <label htmlFor="camera-device">摄像头</label>
@@ -63,6 +67,10 @@ export function CameraPage() {
           <StatusItem label="信令连接" value={socketConnected ? '已连接' : '未连接'} />
           <StatusItem label="采集端状态" value={statusLabel(status)} />
           <StatusItem label="观看人数" value={`${viewers.length}`} />
+          <StatusItem
+            label="麦克风"
+            value={localStream?.getAudioTracks().some((t) => t.readyState === 'live') ? '已采集' : '未采集'}
+          />
         </div>
 
         {error ? <div className="alert">{error}</div> : null}

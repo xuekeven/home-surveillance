@@ -12,6 +12,7 @@ import {
   assertWebRtcSupport,
   createCameraPeer,
   detectSelectedCandidateType,
+  getCameraCaptureStream,
   getCameraVideoMediaStreamByDeviceId,
   getIceServers,
   isBenignPeerTeardownError,
@@ -158,21 +159,13 @@ export function useCameraRoom(roomId: string) {
 
     try {
       if (!window.isSecureContext) {
-        throw new Error('当前页面不是 HTTPS 安全上下文，浏览器可能拒绝摄像头权限')
+        throw new Error('当前页面不是 HTTPS 安全上下文，浏览器可能拒绝摄像头或麦克风权限')
       }
       assertWebRtcSupport()
 
       const [iceServers, stream] = await Promise.all([
         getIceServers(),
-        navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: 'environment',
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            frameRate: { ideal: 20, max: 30 }
-          },
-          audio: false
-        })
+        getCameraCaptureStream()
       ])
 
       iceServersRef.current = iceServers
@@ -255,18 +248,23 @@ export function useCameraRoom(roomId: string) {
       let newStream: MediaStream | undefined
       try {
         newStream = await getCameraVideoMediaStreamByDeviceId(deviceId)
-        const newTrack = newStream.getVideoTracks()[0]
-        if (!newTrack) {
+        const newVideoTrack = newStream.getVideoTracks()[0]
+        if (!newVideoTrack) {
           throw new Error('未拿到新的视频轨')
         }
 
-        await replaceOutgoingVideoTrackForPeers(peersRef.current.values(), newTrack)
+        await replaceOutgoingVideoTrackForPeers(peersRef.current.values(), newVideoTrack)
 
-        streamRef.current.getVideoTracks().forEach((track) => track.stop())
-        streamRef.current = newStream
-        setLocalStream(newStream)
+        const prev = streamRef.current
+        const audioTracks = prev.getAudioTracks().filter((track) => track.readyState === 'live')
+
+        prev.getVideoTracks().forEach((track) => track.stop())
+
+        const combined = new MediaStream([newVideoTrack, ...audioTracks])
+        streamRef.current = combined
+        setLocalStream(combined)
         setActiveCameraId(deviceId)
-        void refreshCameraCatalog(newStream)
+        void refreshCameraCatalog(combined)
       } catch (switchErr) {
         newStream?.getTracks().forEach((track) => track.stop())
         setError(switchErr instanceof Error ? switchErr.message : '切换摄像头失败')

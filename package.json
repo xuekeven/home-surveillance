@@ -1,5 +1,13 @@
 {
   "name": "home-surveillance",
+  "version": "1.0.0",
+  "description": "家庭监控系统",
+  "keywords": [
+    "家庭监控",
+    "监控系统",
+    "家庭云",
+    "监控"
+  ],
   "private": true,
   "type": "module",
   "workspaces": [

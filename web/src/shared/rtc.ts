@@ -117,6 +117,26 @@ export async function getIceServers(): Promise<IceServer[]> {
   return appConfig.fallbackIceServers
 }
 
+/** 采集端首次获取音视频；麦克风失败时降级为仅视频，避免整页不可用 */
+export async function getCameraCaptureStream(): Promise<MediaStream> {
+  const video = {
+    facingMode: 'environment' as const,
+    width: { ideal: 1280 },
+    height: { ideal: 720 },
+    frameRate: { ideal: 20, max: 30 }
+  }
+  const audio = {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true
+  }
+  try {
+    return await navigator.mediaDevices.getUserMedia({ video, audio })
+  } catch {
+    return navigator.mediaDevices.getUserMedia({ video, audio: false })
+  }
+}
+
 export function createCameraPeer(localStream: MediaStream, iceServers: IceServer[]): PeerInstance {
   return new SimplePeer({
     initiator: true,

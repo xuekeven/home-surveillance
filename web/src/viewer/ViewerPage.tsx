@@ -21,6 +21,8 @@ export function ViewerPage() {
   useEffect(() => {
     if (videoRef.current && remoteStream) {
       videoRef.current.srcObject = remoteStream
+      videoRef.current.muted = false
+      void videoRef.current.play().catch(() => {})
     }
   }, [remoteStream])
 
@@ -31,7 +33,14 @@ export function ViewerPage() {
         <h1>观看端</h1>
         <p className="muted">房间：{roomId}</p>
 
-        <video ref={videoRef} className="video" playsInline autoPlay controls />
+        <video
+          ref={videoRef}
+          className="video"
+          playsInline
+          autoPlay
+          controls
+          muted={false}
+        />
 
         <div className="grid">
           <StatusItem label="信令连接" value={socketConnected ? '已连接' : '未连接'} />
