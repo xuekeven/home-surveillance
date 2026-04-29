@@ -65,6 +65,7 @@ export function useCameraRoom(roomId: string) {
   const iceServersRef = useRef<IceServer[]>([])
   const peersRef = useRef<Map<string, PeerInstance>>(new Map())
   const socketHandshakeWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [viewerInboundAudio, setViewerInboundAudio] = useState<Record<string, MediaStream>>({})
 
   const refreshCameraCatalog = useCallback(async (stream: MediaStream) => {
     try {
@@ -105,6 +106,15 @@ export function useCameraRoom(roomId: string) {
       peersRef.current.delete(viewerSocketId)
     }
 
+    setViewerInboundAudio((prev) => {
+      if (!(viewerSocketId in prev)) {
+        return prev
+      }
+      const next = { ...prev }
+      delete next[viewerSocketId]
+      return next
+    })
+
     setViewers((current) => current.filter((viewer) => viewer.socketId !== viewerSocketId))
   }, [])
 
@@ -127,6 +137,13 @@ export function useCameraRoom(roomId: string) {
         to: viewerSocketId,
         signal
       })
+    })
+
+    peer.on('stream', (remoteStream: MediaStream) => {
+      if (remoteStream.getAudioTracks().length === 0) {
+        return
+      }
+      setViewerInboundAudio((prev) => ({ ...prev, [viewerSocketId]: remoteStream }))
     })
 
     peer.on('connect', () => {
@@ -309,6 +326,7 @@ export function useCameraRoom(roomId: string) {
     streamRef.current = null
     setLocalStream(undefined)
     setViewers([])
+    setViewerInboundAudio({})
     setCameraDevices([])
     setActiveCameraId('')
     setSwitchingCamera(false)
@@ -335,6 +353,7 @@ export function useCameraRoom(roomId: string) {
     isSecureContext: isSecureContextValue,
     socketConnected,
     viewers,
+    viewerInboundAudio,
     cameraDevices,
     activeCameraId,
     switchingCamera,

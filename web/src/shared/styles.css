@@ -176,6 +176,47 @@ h2 {
   margin-top: 1rem;
 }
 
+.viewer-voice {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 1rem;
+}
+
+.viewer-voice-hint {
+  margin: 0.35rem 0 0;
+  font-size: 0.88rem;
+}
+
+.speak-btn {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.speak-btn.active {
+  background: #22c55e;
+  color: #052e16;
+}
+
+.viewer-remote-audios {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+}
+
+.viewer-return-audio {
+  color: #86efac;
+}
+
+.viewer-return-audio:not(:last-child) {
+  margin-inline-end: 0.35rem;
+}
+
 .list {
   display: grid;
   gap: 0.75rem;

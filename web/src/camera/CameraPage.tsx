@@ -13,6 +13,7 @@ export function CameraPage() {
     isSecureContext,
     socketConnected,
     viewers,
+    viewerInboundAudio,
     cameraDevices,
     activeCameraId,
     switchingCamera,
@@ -91,14 +92,38 @@ export function CameraPage() {
               <li key={viewer.socketId}>
                 <span>{viewer.socketId}</span>
                 <strong>{statusLabel(viewer.status)}</strong>
+                {viewerInboundAudio[viewer.socketId] ? (
+                  <em className="viewer-return-audio">对讲上行</em>
+                ) : null}
                 {viewer.candidateType ? <em>{viewer.candidateType}</em> : null}
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      <div className="viewer-remote-audios" aria-hidden="true">
+        {Object.entries(viewerInboundAudio).map(([viewerSocketId, stream]) => (
+          <ViewerRemoteAudioTrack key={viewerSocketId} stream={stream} />
+        ))}
+      </div>
     </main>
   )
+}
+
+function ViewerRemoteAudioTrack({ stream }: { stream: MediaStream }) {
+  const ref = useRef<HTMLAudioElement>(null)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) {
+      return
+    }
+    el.srcObject = stream
+    void el.play().catch(() => {})
+  }, [stream])
+
+  return <audio ref={ref} autoPlay playsInline />
 }
 
 function StatusItem({ label, value }: { label: string; value: string }) {

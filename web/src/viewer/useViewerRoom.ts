@@ -7,6 +7,7 @@ import {
   createViewerPeer,
   detectSelectedCandidateType,
   getIceServers,
+  getViewerMicMediaStream,
   isBenignPeerTeardownError,
   type PeerInstance
 } from '../shared/rtc'
@@ -46,15 +47,72 @@ export function useViewerRoom(roomId: string) {
   const iceServersRef = useRef<IceServer[]>([])
   const remoteStreamRef = useRef<MediaStream | null>(null)
   const socketHandshakeWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const micStreamRef = useRef<MediaStream | null>(null)
+  const micAttachedToPeerRef = useRef(false)
+  const micDesiredRef = useRef(false)
+
+  const [dialogMicOn, setDialogMicOn] = useState(false)
+  const [pushMicHeld, setPushMicHeld] = useState(false)
+
+  useEffect(() => {
+    micDesiredRef.current = dialogMicOn || pushMicHeld
+  }, [dialogMicOn, pushMicHeld])
+
+  const syncViewerUpstreamMic = useCallback(async () => {
+    const peer = peerRef.current
+    const desired = micDesiredRef.current
+
+    if (!peer || peer.destroyed) {
+      micStreamRef.current?.getAudioTracks().forEach((track) => {
+        track.enabled = false
+      })
+      return
+    }
+
+    try {
+      if (!desired) {
+        micStreamRef.current?.getAudioTracks().forEach((track) => {
+          track.enabled = false
+        })
+        return
+      }
+
+      let stream = micStreamRef.current
+      if (!stream) {
+        stream = await getViewerMicMediaStream()
+        micStreamRef.current = stream
+      }
+
+      if (!micDesiredRef.current) {
+        stream.getAudioTracks().forEach((track) => {
+          track.enabled = false
+        })
+        return
+      }
+
+      stream.getAudioTracks().forEach((track) => {
+        track.enabled = true
+      })
+
+      if (!micAttachedToPeerRef.current) {
+        peer.addStream(stream)
+        micAttachedToPeerRef.current = true
+      }
+    } catch (micErr) {
+      setError(micErr instanceof Error ? micErr.message : '无法使用麦克风')
+    }
+  }, [])
 
   const destroyPeer = useCallback(() => {
     peerRef.current?.destroy()
     peerRef.current = null
     cameraSocketIdRef.current = null
     remoteStreamRef.current = null
+    micAttachedToPeerRef.current = false
     setRemoteStream(undefined)
     setCandidateType(undefined)
-  }, [])
+    void syncViewerUpstreamMic()
+  }, [syncViewerUpstreamMic])
 
   const ensurePeer = useCallback((cameraSocketId: string): PeerInstance => {
     if (peerRef.current && cameraSocketIdRef.current === cameraSocketId) {
@@ -89,6 +147,7 @@ export function useViewerRoom(roomId: string) {
           setCandidateType(type)
         }
       })
+      void syncViewerUpstreamMic()
     })
 
     peer.on('close', () => {
@@ -105,7 +164,7 @@ export function useViewerRoom(roomId: string) {
     })
 
     return peer
-  }, [destroyPeer, roomId])
+  }, [destroyPeer, roomId, syncViewerUpstreamMic])
 
   const start = useCallback(async () => {
     setError(undefined)
@@ -185,6 +244,10 @@ export function useViewerRoom(roomId: string) {
     }
   }, [destroyPeer, ensurePeer, roomId])
 
+  useEffect(() => {
+    void syncViewerUpstreamMic()
+  }, [dialogMicOn, pushMicHeld, syncViewerUpstreamMic])
+
   const stop = useCallback(() => {
     if (socketHandshakeWatchdogRef.current) {
       clearTimeout(socketHandshakeWatchdogRef.current)
@@ -192,6 +255,11 @@ export function useViewerRoom(roomId: string) {
     }
 
     destroyPeer()
+    micStreamRef.current?.getTracks().forEach((track) => track.stop())
+    micStreamRef.current = null
+    micAttachedToPeerRef.current = false
+    setDialogMicOn(false)
+    setPushMicHeld(false)
     socketRef.current?.disconnect()
     socketRef.current = null
     setSocketConnected(false)
@@ -220,6 +288,10 @@ export function useViewerRoom(roomId: string) {
     cameraOnline,
     viewerCount,
     candidateType,
+    dialogMicOn,
+    setDialogMicOn,
+    pushMicHeld,
+    setPushMicHeld,
     restart,
     stop
   }

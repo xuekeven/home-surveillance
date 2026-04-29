@@ -117,6 +117,18 @@ export async function getIceServers(): Promise<IceServer[]> {
   return appConfig.fallbackIceServers
 }
 
+/** 观看端上行麦克风（仅音频） */
+export async function getViewerMicMediaStream(): Promise<MediaStream> {
+  return navigator.mediaDevices.getUserMedia({
+    audio: {
+      echoCancellation: true,
+      noiseSuppression: true,
+      autoGainControl: true
+    },
+    video: false
+  })
+}
+
 /** 采集端首次获取音视频；麦克风失败时降级为仅视频，避免整页不可用 */
 export async function getCameraCaptureStream(): Promise<MediaStream> {
   const video = {
