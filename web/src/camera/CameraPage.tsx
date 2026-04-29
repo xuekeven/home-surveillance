@@ -44,22 +44,7 @@ export function CameraPage() {
         <h1>采集端</h1>
         <p className="muted">房间：{roomId}</p>
 
-        <CameraDeviceToolbar
-          idPrefix="camera"
-          devices={cameraDevices}
-          activeCameraId={activeCameraId}
-          switchingCamera={switchingCamera}
-          onSelectDevice={(deviceId) => void switchCamera(deviceId)}
-        />
-
         <video ref={videoRef} className="video" muted playsInline autoPlay />
-
-        <SpeakerOutputToolbar
-          idPrefix="camera"
-          devices={speakerDevices}
-          selectedDeviceId={selectedSpeakerId}
-          onSelectDevice={setSelectedSpeakerId}
-        />
 
         <div className="grid">
           <StatusItem label="页面安全上下文" value={isSecureContext ? '是' : '否'} />
@@ -69,6 +54,23 @@ export function CameraPage() {
           <StatusItem
             label="麦克风"
             value={localStream?.getAudioTracks().some((t) => t.readyState === 'live') ? '已采集' : '未采集'}
+          />
+        </div>
+
+        <div className="device-controls-block">
+          <CameraDeviceToolbar
+            idPrefix="camera"
+            devices={cameraDevices}
+            activeCameraId={activeCameraId}
+            switchingCamera={switchingCamera}
+            onSelectDevice={(deviceId) => void switchCamera(deviceId)}
+          />
+
+          <SpeakerOutputToolbar
+            idPrefix="camera"
+            devices={speakerDevices}
+            selectedDeviceId={selectedSpeakerId}
+            onSelectDevice={setSelectedSpeakerId}
           />
         </div>
 

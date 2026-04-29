@@ -18,14 +18,14 @@ export function SpeakerOutputToolbar({
   if (!supportsAudioOutputSelection()) {
     return (
       <p className="muted speaker-unavailable-hint">
-        当前浏览器不支持手动选择扬声器（需 Chromium 内核且为 HTTPS；Firefox / Safari 通常不可用）。
+        当前浏览器不支持手动选择本端扬声器（需 Chromium 内核且为 HTTPS；Firefox / Safari 通常不可用）。
       </p>
     )
   }
 
   return (
     <div className="camera-switch speaker-switch">
-      <label htmlFor={`${idPrefix}-speaker`}>扬声器</label>
+      <label htmlFor={`${idPrefix}-speaker`}>本端扬声器</label>
       <select
         id={`${idPrefix}-speaker`}
         disabled={disabled}
@@ -37,7 +37,7 @@ export function SpeakerOutputToolbar({
           .filter((device) => device.deviceId)
           .map((device, index) => (
             <option key={device.deviceId} value={device.deviceId}>
-              {device.label.trim() || `扬声器 ${index + 1}`}
+              {device.label.trim() || `本端扬声器 ${index + 1}`}
             </option>
           ))}
       </select>

@@ -60,15 +60,6 @@ export function ViewerPage() {
         <h1>观看端</h1>
         <p className="muted">房间：{roomId}</p>
 
-        <CameraDeviceToolbar
-          idPrefix="viewer"
-          label="采集端摄像头"
-          devices={cameraDevices}
-          activeCameraId={activeCameraId}
-          switchingCamera={switchingCamera}
-          onSelectDevice={(deviceId) => switchRemoteCamera(deviceId)}
-        />
-
         <video
           ref={videoRef}
           className="video viewer-remote-video"
@@ -76,13 +67,6 @@ export function ViewerPage() {
           autoPlay
           controls
           muted={false}
-        />
-
-        <SpeakerOutputToolbar
-          idPrefix="viewer"
-          devices={speakerDevices}
-          selectedDeviceId={selectedSpeakerId}
-          onSelectDevice={setSelectedSpeakerId}
         />
 
         <div className="grid">
@@ -94,6 +78,24 @@ export function ViewerPage() {
           <StatusItem
             label="对话采集"
             value={dialogMicOn || pushMicHeld ? '开启' : '关闭'}
+          />
+        </div>
+
+        <div className="device-controls-block">
+          <CameraDeviceToolbar
+            idPrefix="viewer"
+            label="采集摄像头"
+            devices={cameraDevices}
+            activeCameraId={activeCameraId}
+            switchingCamera={switchingCamera}
+            onSelectDevice={(deviceId) => switchRemoteCamera(deviceId)}
+          />
+
+          <SpeakerOutputToolbar
+            idPrefix="viewer"
+            devices={speakerDevices}
+            selectedDeviceId={selectedSpeakerId}
+            onSelectDevice={setSelectedSpeakerId}
           />
         </div>
 

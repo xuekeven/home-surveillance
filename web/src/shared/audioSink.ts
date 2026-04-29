@@ -11,7 +11,7 @@ export async function enumerateAudioOutputDevices(): Promise<MediaDeviceInfo[]> 
 }
 
 /**
- * 将播放路由到指定扬声器；空字符串表示系统默认输出。
+ * 将播放路由到指定输出设备；空字符串表示系统默认输出。
  * 需 HTTPS；失败时静默忽略。
  */
 export async function applyAudioSinkToMedia(
@@ -56,7 +56,7 @@ export function useAudioOutputDevices(): {
   return { devices, refresh }
 }
 
-/** 扬声器下拉：所选 deviceId 与其它状态解耦，便于页面持久化到本地 state */
+/** 本端扬声器下拉：所选 deviceId 与其它状态解耦，便于页面持久化到本地 state */
 export function useSpeakerOutputSelection(): {
   devices: MediaDeviceInfo[]
   selectedDeviceId: string
