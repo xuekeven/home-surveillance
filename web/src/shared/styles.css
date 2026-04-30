@@ -138,17 +138,24 @@ h2 {
 }
 
 .face-tracking-fieldset {
-  margin: 0;
+  margin: 0 0 0.75rem;
   padding: 0;
   border: none;
+  min-width: 0;
 }
 
-.face-tracking-fieldset legend {
+.face-tracking-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.65rem 1rem;
+}
+
+.face-tracking-field-label {
   font-weight: 600;
   color: #cbd5e1;
   font-size: 0.9rem;
-  padding: 0;
-  margin-bottom: 0.5rem;
+  flex-shrink: 0;
 }
 
 .face-tracking-options {
@@ -156,6 +163,8 @@ h2 {
   flex-wrap: wrap;
   align-items: center;
   gap: 0.65rem 1.25rem;
+  flex: 1;
+  min-width: min(100%, 10rem);
 }
 
 .face-tracking-fieldset label {
