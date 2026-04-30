@@ -16,6 +16,14 @@ const devIce = JSON.stringify([
   { urls: 'stun:global.stun.twilio.com:3478' }
 ])
 
+const ALLOWED_ORIGINS = [
+  'https://homeserver.tailed5977.ts.net',
+  'https://www.kaitool.top',
+  'https://kaitool.top',
+  'http://localhost:5173',
+  'http://localhost:3333'
+].join(',')
+
 module.exports = {
   apps: [
     {
@@ -32,14 +40,11 @@ module.exports = {
         PUBLIC_BASE_PATH: '/surveillance',
         ROOM_TOKEN: 'xuekaixihuanshenshiyi',
         MAX_VIEWERS_PER_ROOM: '2',
-        ALLOWED_ORIGINS: [
-          'https://homeserver.tailed5977.ts.net',
-          'https://www.kaitool.top',
-          'https://kaitool.top',
-          'http://localhost:5173',
-          'http://localhost:3333'
-        ].join(','),
-        ICE_SERVERS_JSON: devIce
+        ALLOWED_ORIGINS: ALLOWED_ORIGINS,
+        ICE_SERVERS_JSON: devIce,
+        /** 企微中转 wework-send；留空则检测到人脸也不调用 relay */
+        WEWORK_RELAY_URL: 'http://aliserver.tailed5977.ts.net:5001',
+        WEWORK_RELAY_API_KEY: '1d36fdb5219ccacdc437fc87b9609df5eac29df7ae4db1a93f379fe03552a1dd'
       },
       env_development: {
         NODE_ENV: 'development',
@@ -47,14 +52,10 @@ module.exports = {
         PUBLIC_BASE_PATH: '',
         ROOM_TOKEN: 'xuekaixihuanshenshiyi',
         MAX_VIEWERS_PER_ROOM: '2',
-        ALLOWED_ORIGINS: [
-          'https://homeserver.tailed5977.ts.net',
-          'https://www.kaitool.top',
-          'https://kaitool.top',
-          'http://localhost:5173',
-          'http://localhost:3333'
-        ].join(','),
+        ALLOWED_ORIGINS: ALLOWED_ORIGINS,
         ICE_SERVERS_JSON: devIce,
+        WEWORK_RELAY_URL: 'http://aliserver.tailed5977.ts.net:5001',
+        WEWORK_RELAY_API_KEY: '1d36fdb5219ccacdc437fc87b9609df5eac29df7ae4db1a93f379fe03552a1dd',
         VITE_PUBLIC_BASE_PATH: '/',
         VITE_ROOM_TOKEN: 'xuekaixihuanshenshiyi',
         VITE_ICE_SERVERS_JSON: devIce

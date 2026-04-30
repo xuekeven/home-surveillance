@@ -55,3 +55,8 @@ export const appConfig = {
 export function apiIceServersUrl(): string {
   return publicBasePath ? `${publicBasePath}/api/ice-servers` : '/api/ice-servers'
 }
+
+export function apiFaceAlertUrl(): string {
+  const prefix = publicBasePath ? `${publicBasePath}/api` : '/api'
+  return `${prefix}/wework/face-alert`
+}

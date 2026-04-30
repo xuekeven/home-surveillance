@@ -1,9 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { applyAudioSinkToMedia, useSpeakerOutputSelection } from '../shared/audioSink'
 import { CameraDeviceToolbar } from '../shared/cameraDeviceToolbar'
 import { SpeakerOutputToolbar } from '../shared/speakerOutputToolbar'
+import { FaceAnalysisOverlay } from '../shared/faceAnalysisOverlay'
+import { FaceTrackingRadios } from '../shared/faceTrackingRadios'
 import { statusLabel } from '../shared/status'
+import { appConfig } from '../config'
 import { useCameraRoom } from './useCameraRoom'
 
 export function CameraPage() {
@@ -31,6 +34,8 @@ export function CameraPage() {
     setSelectedDeviceId: setSelectedSpeakerId
   } = useSpeakerOutputSelection()
 
+  const [faceTrackingEnabled, setFaceTrackingEnabled] = useState(true)
+
   useEffect(() => {
     if (videoRef.current && localStream) {
       videoRef.current.srcObject = localStream
@@ -44,7 +49,18 @@ export function CameraPage() {
         <h1>采集端</h1>
         <p className="muted">房间：{roomId}</p>
 
-        <video ref={videoRef} className="video" muted playsInline autoPlay />
+        <div className="video-face-stack">
+          <video ref={videoRef} className="video" muted playsInline autoPlay />
+          <FaceAnalysisOverlay
+            videoRef={videoRef}
+            active={Boolean(localStream) && faceTrackingEnabled}
+            faceAlert={{
+              roomId,
+              token: appConfig.roomToken,
+              enabled: faceTrackingEnabled && Boolean(localStream)
+            }}
+          />
+        </div>
 
         <div className="grid">
           <StatusItem label="页面安全上下文" value={isSecureContext ? '是' : '否'} />
@@ -71,6 +87,12 @@ export function CameraPage() {
             devices={speakerDevices}
             selectedDeviceId={selectedSpeakerId}
             onSelectDevice={setSelectedSpeakerId}
+          />
+
+          <FaceTrackingRadios
+            idPrefix="camera"
+            enabled={faceTrackingEnabled}
+            onChange={setFaceTrackingEnabled}
           />
         </div>
 

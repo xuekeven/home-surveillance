@@ -76,7 +76,18 @@ export const config = {
   roomToken: process.env.ROOM_TOKEN || 'change-me',
   maxViewersPerRoom: parseInteger(process.env.MAX_VIEWERS_PER_ROOM, 2),
   allowedOrigins: parseOrigins(process.env.ALLOWED_ORIGINS),
-  iceServers: parseIceServers(process.env.ICE_SERVERS_JSON)
+  iceServers: parseIceServers(process.env.ICE_SERVERS_JSON),
+  /** 企微中转服务基址，无末尾斜杠；未设置环境变量时默认 Tailscale 上 relay */
+  weworkRelayUrl: (process.env.WEWORK_RELAY_URL || 'http://aliserver.tailed5977.ts.net:5001')
+    .trim()
+    .replace(/\/$/, ''),
+  weworkRelayApiKey: (process.env.WEWORK_RELAY_API_KEY || '').trim(),
+  weworkRelayTouser: (process.env.WEWORK_RELAY_TOUSER || '').trim() || undefined,
+  faceAlertOriginPrimary:
+    (process.env.FACE_ALERT_ORIGIN_PRIMARY || 'https://homeserver.tailed5977.ts.net').trim().replace(/\/$/, ''),
+  faceAlertOriginSecondary:
+    (process.env.FACE_ALERT_ORIGIN_SECONDARY || 'https://www.kaitool.top').trim().replace(/\/$/, ''),
+  faceAlertCooldownMs: parseInteger(process.env.FACE_ALERT_COOLDOWN_MS, 120000)
 }
 
 /** Express REST：`/api/*` 或 `{PUBLIC_BASE_PATH}/api/*` */

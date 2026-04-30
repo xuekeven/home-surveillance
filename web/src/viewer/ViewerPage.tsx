@@ -1,9 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { applyAudioSinkToMedia, useSpeakerOutputSelection } from '../shared/audioSink'
 import { CameraDeviceToolbar } from '../shared/cameraDeviceToolbar'
 import { SpeakerOutputToolbar } from '../shared/speakerOutputToolbar'
+import { FaceAnalysisOverlay } from '../shared/faceAnalysisOverlay'
+import { FaceTrackingRadios } from '../shared/faceTrackingRadios'
 import { statusLabel } from '../shared/status'
+import { appConfig } from '../config'
 import { useViewerRoom } from './useViewerRoom'
 
 export function ViewerPage() {
@@ -37,6 +40,8 @@ export function ViewerPage() {
     setSelectedDeviceId: setSelectedSpeakerId
   } = useSpeakerOutputSelection()
 
+  const [faceTrackingEnabled, setFaceTrackingEnabled] = useState(true)
+
   useEffect(() => {
     if (videoRef.current && remoteStream) {
       videoRef.current.srcObject = remoteStream
@@ -60,14 +65,25 @@ export function ViewerPage() {
         <h1>观看端</h1>
         <p className="muted">房间：{roomId}</p>
 
-        <video
-          ref={videoRef}
-          className="video viewer-remote-video"
-          playsInline
-          autoPlay
-          controls
-          muted={false}
-        />
+        <div className="video-face-stack">
+          <video
+            ref={videoRef}
+            className="video viewer-remote-video"
+            playsInline
+            autoPlay
+            controls
+            muted={false}
+          />
+          <FaceAnalysisOverlay
+            videoRef={videoRef}
+            active={Boolean(remoteStream) && faceTrackingEnabled}
+            faceAlert={{
+              roomId,
+              token: appConfig.roomToken,
+              enabled: faceTrackingEnabled && Boolean(remoteStream)
+            }}
+          />
+        </div>
 
         <div className="grid">
           <StatusItem label="信令连接" value={socketConnected ? '已连接' : '未连接'} />
@@ -96,6 +112,12 @@ export function ViewerPage() {
             devices={speakerDevices}
             selectedDeviceId={selectedSpeakerId}
             onSelectDevice={setSelectedSpeakerId}
+          />
+
+          <FaceTrackingRadios
+            idPrefix="viewer"
+            enabled={faceTrackingEnabled}
+            onChange={setFaceTrackingEnabled}
           />
         </div>
 
