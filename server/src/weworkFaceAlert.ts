@@ -14,7 +14,7 @@ export function buildViewerUrls(roomId: string): { url1: string; url2: string } 
 export function formatFaceAlertContent(roomId: string, strangerCount: number): string {
   const { url1, url2 } = buildViewerUrls(roomId)
   const n = Math.max(1, Math.floor(strangerCount))
-  return `【${roomId}】视频监控检测到【${n}】个陌生人脸，请及时关注！\n点击 ${url1} 或者 ${url2} 查看实时视频监控。`
+  return `【${roomId}】监控检测到【${n}】个陌生人，请关注！\n点击 ${url1} 或者 ${url2} 查看实时监控。`
 }
 
 export type FaceAlertDispatchResult =

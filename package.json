@@ -17,12 +17,13 @@
   "scripts": {
     "dev": "node scripts/run-dev.mjs",
     "build": "npm run build -w web && npm run build -w server",
-    "build:homeserver": "node scripts/build-homeserver.mjs",
+    "build:prod": "node scripts/build-prod.mjs",
     "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
     "start": "npm run start -w server"
   },
   "devDependencies": {
     "concurrently": "9.2.1",
+    "dotenv": "17.4.2",
     "typescript": "6.0.3"
   }
 }

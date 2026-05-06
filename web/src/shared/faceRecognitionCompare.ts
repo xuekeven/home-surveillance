@@ -1,32 +1,18 @@
 import type { StoredFamilyMember } from './familyMemberTypes'
 
 /** 欧氏距离阈值：越小越严格（光照/角度会影响，家用可略放宽） */
-export const DEFAULT_FAMILY_DISTANCE_THRESHOLD = 0.48
+export const DEFAULT_FAMILY_DISTANCE_THRESHOLD = 0.56
 
 /** MediaPipe 框与 face-api 框的最小 IoU，低于则认为未对齐 */
 export const MIN_FACE_DETECTOR_IOU = 0.12
 
-export function euclideanDistance(a: Float32Array, b: Float32Array): number {
+function euclideanDistance(a: Float32Array, b: Float32Array): number {
   let sum = 0
   for (let i = 0; i < a.length; i++) {
     const d = a[i] - b[i]
     sum += d * d
   }
   return Math.sqrt(sum)
-}
-
-export function nearestFamilyDistance(descriptor: Float32Array, members: StoredFamilyMember[]): number {
-  if (members.length === 0) {
-    return Infinity
-  }
-  let min = Infinity
-  for (const m of members) {
-    const d = euclideanDistance(descriptor, new Float32Array(m.descriptor))
-    if (d < min) {
-      min = d
-    }
-  }
-  return min
 }
 
 /** 返回距离最近的登记成员；距离不小于阈值时视为不匹配 */
@@ -48,14 +34,6 @@ export function matchFamilyMember(
     }
   }
   return best !== null && bestD < threshold ? best : null
-}
-
-export function isDescriptorMatchingFamily(
-  descriptor: Float32Array,
-  members: StoredFamilyMember[],
-  threshold = DEFAULT_FAMILY_DISTANCE_THRESHOLD
-): boolean {
-  return matchFamilyMember(descriptor, members, threshold) !== null
 }
 
 export function intersectionOverUnion(

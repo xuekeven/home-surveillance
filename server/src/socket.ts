@@ -1,7 +1,7 @@
 import type { Server, Socket } from 'socket.io'
 import { isAuthorized } from './auth.js'
 import { config } from './config.js'
-import { checkRoomJoin } from './persist/roomPoliciesRepo.js'
+import { checkRoomJoin, getRoomPolicy } from './persist/roomPoliciesRepo.js'
 import {
   getClient,
   getRoom,
@@ -149,7 +149,9 @@ async function handleJoinRoom(io: Server, socket: Socket, payload: unknown): Pro
     return
   }
 
-  const result = joinViewer(payload.roomId, socket.id, config.maxViewersPerRoom)
+  const policy = await getRoomPolicy(payload.roomId)
+  const maxViewers = policy?.maxViewersPerRoom ?? config.maxViewersPerRoom
+  const result = joinViewer(payload.roomId, socket.id, maxViewers)
   if (!result.ok) {
     sendRoomError(socket, result.reason)
     return

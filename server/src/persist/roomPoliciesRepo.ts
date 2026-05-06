@@ -1,11 +1,14 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { config } from '../config.js'
 import { DATA_DIR } from './dir.js'
 
 /** 持久化字段；旧数据可能仅有 enabled */
 type StoredRoomPolicy = {
   enabled: boolean
   strangerFaceAlert?: boolean
+  /** 该房间允许同时在线的观看端数量（不含采集端） */
+  maxViewersPerRoom?: number
 }
 
 type Payload = {
@@ -16,6 +19,24 @@ type Payload = {
 export type RoomPolicyPublic = {
   enabled: boolean
   strangerFaceAlert: boolean
+  maxViewersPerRoom: number
+}
+
+function clampMaxViewers(n: number): number {
+  return Math.max(1, Math.min(99, Math.floor(Number.isFinite(n) ? n : 1)))
+}
+
+function parseStoredMaxViewers(raw: unknown): number | undefined {
+  if (typeof raw === 'number' && Number.isFinite(raw)) {
+    return clampMaxViewers(raw)
+  }
+  if (typeof raw === 'string' && raw.trim()) {
+    const x = Number.parseInt(raw, 10)
+    if (Number.isFinite(x)) {
+      return clampMaxViewers(x)
+    }
+  }
+  return undefined
 }
 
 const FILE = path.join(DATA_DIR, 'room-policies.json')
@@ -41,9 +62,12 @@ function normalize(raw: StoredRoomPolicy | undefined): RoomPolicyPublic | null {
   if (!raw || typeof raw.enabled !== 'boolean') {
     return null
   }
+  const maxViewersPerRoom =
+    parseStoredMaxViewers(raw.maxViewersPerRoom) ?? clampMaxViewers(config.maxViewersPerRoom)
   return {
     enabled: raw.enabled === true,
-    strangerFaceAlert: raw.strangerFaceAlert === true
+    strangerFaceAlert: raw.strangerFaceAlert === true,
+    maxViewersPerRoom
   }
 }
 
@@ -90,17 +114,28 @@ export async function getRoomPolicy(roomId: string): Promise<RoomPolicyPublic | 
 /** 合并更新策略字段（可新建房间条目） */
 export async function patchRoomPolicy(
   roomId: string,
-  patch: Partial<{ enabled: boolean; strangerFaceAlert: boolean }>
+  patch: Partial<{ enabled: boolean; strangerFaceAlert: boolean; maxViewersPerRoom: number }>
 ): Promise<RoomPolicyPublic> {
   const data = await readPayload()
-  const prev = normalize(data.rooms[roomId]) ?? { enabled: false, strangerFaceAlert: false }
+  const prev =
+    normalize(data.rooms[roomId]) ?? {
+      enabled: false,
+      strangerFaceAlert: false,
+      maxViewersPerRoom: clampMaxViewers(config.maxViewersPerRoom)
+    }
   const next: RoomPolicyPublic = {
     enabled: patch.enabled !== undefined ? patch.enabled : prev.enabled,
-    strangerFaceAlert: patch.strangerFaceAlert !== undefined ? patch.strangerFaceAlert : prev.strangerFaceAlert
+    strangerFaceAlert:
+      patch.strangerFaceAlert !== undefined ? patch.strangerFaceAlert : prev.strangerFaceAlert,
+    maxViewersPerRoom:
+      patch.maxViewersPerRoom !== undefined
+        ? clampMaxViewers(patch.maxViewersPerRoom)
+        : prev.maxViewersPerRoom
   }
   data.rooms[roomId] = {
     enabled: next.enabled,
-    strangerFaceAlert: next.strangerFaceAlert
+    strangerFaceAlert: next.strangerFaceAlert,
+    maxViewersPerRoom: next.maxViewersPerRoom
   }
   await writePayload(data)
   return next

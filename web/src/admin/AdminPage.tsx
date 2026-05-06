@@ -5,6 +5,7 @@ import {
   ConfigProvider,
   Form,
   Input,
+  InputNumber,
   message,
   Modal,
   Radio,
@@ -505,12 +506,24 @@ type RoomTableRow = {
   viewerUrl: string
   enabled: boolean
   strangerFaceAlert: boolean
+  maxViewersPerRoom: number
 }
 
 function AdminRoomsSection({ adminToken }: { adminToken: string }) {
-  const [addForm] = Form.useForm<{ roomId: string; allowConnect: boolean; strangerFaceAlert: boolean }>()
-  const [editForm] = Form.useForm<{ allowConnect: boolean; strangerFaceAlert: boolean }>()
-  const [rooms, setRooms] = useState<Record<string, { enabled: boolean; strangerFaceAlert: boolean }>>({})
+  const [addForm] = Form.useForm<{
+    roomId: string
+    allowConnect: boolean
+    strangerFaceAlert: boolean
+    maxViewersPerRoom: number
+  }>()
+  const [editForm] = Form.useForm<{
+    allowConnect: boolean
+    strangerFaceAlert: boolean
+    maxViewersPerRoom: number
+  }>()
+  const [rooms, setRooms] = useState<
+    Record<string, { enabled: boolean; strangerFaceAlert: boolean; maxViewersPerRoom: number }>
+  >({})
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [editModalOpen, setEditModalOpen] = useState(false)
   const [editingRoomId, setEditingRoomId] = useState<string | null>(null)
@@ -561,7 +574,8 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
       setAddSubmitting(true)
       await adminPatchRoom(adminToken, id, {
         enabled: values.allowConnect,
-        strangerFaceAlert: values.strangerFaceAlert
+        strangerFaceAlert: values.strangerFaceAlert,
+        maxViewersPerRoom: values.maxViewersPerRoom
       })
       await reload()
       message.success(`已写入房间「${id}」策略。`)
@@ -581,7 +595,8 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
     setEditingRoomId(record.roomId)
     editForm.setFieldsValue({
       allowConnect: record.enabled,
-      strangerFaceAlert: record.strangerFaceAlert
+      strangerFaceAlert: record.strangerFaceAlert,
+      maxViewersPerRoom: record.maxViewersPerRoom
     })
     setEditModalOpen(true)
   }
@@ -595,7 +610,8 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
       setEditSubmitting(true)
       await adminPatchRoom(adminToken, editingRoomId, {
         enabled: values.allowConnect,
-        strangerFaceAlert: values.strangerFaceAlert
+        strangerFaceAlert: values.strangerFaceAlert,
+        maxViewersPerRoom: values.maxViewersPerRoom
       })
       await reload()
       message.success(`已更新房间「${editingRoomId}」。`)
@@ -647,7 +663,11 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
         cameraUrl: urls.camera,
         viewerUrl: urls.viewer,
         enabled: policy.enabled === true,
-        strangerFaceAlert: policy.strangerFaceAlert === true
+        strangerFaceAlert: policy.strangerFaceAlert === true,
+        maxViewersPerRoom:
+          typeof policy.maxViewersPerRoom === 'number' && Number.isFinite(policy.maxViewersPerRoom)
+            ? policy.maxViewersPerRoom
+            : 2
       }
     })
 
@@ -655,7 +675,7 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
     {
       title: '房间 ID',
       dataIndex: 'roomId',
-      width: '10%',
+      width: '9%',
       render: (id: string) => (
         <span className="admin-room-id-wrap">
           <Tooltip title={id}>
@@ -679,10 +699,20 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
     {
       title: '是否开放',
       dataIndex: 'enabled',
-      width: '10%',
+      width: '9%',
       render: (_: boolean, record) => (
         <Switch checked={record.enabled} onChange={(checked) => void patchRoomEnabled(record.roomId, checked)} />
       )
+    },
+    {
+      title: (
+        <Tooltip title="该房间允许同时在线的观看端数量（不含采集端），超出则无法再加入。">
+          <span>最多查看端</span>
+        </Tooltip>
+      ),
+      dataIndex: 'maxViewersPerRoom',
+      width: '9%',
+      render: (n: number) => <Typography.Text>{n}</Typography.Text>
     },
     {
       title: (
@@ -691,7 +721,7 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
         </Tooltip>
       ),
       dataIndex: 'strangerFaceAlert',
-      width: '11%',
+      width: '10%',
       render: (_: boolean, record) => (
         <Switch
           checked={record.strangerFaceAlert}
@@ -721,9 +751,11 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
       <div className="family-face-panel admin-panel-block">
         <h2 className="family-face-heading">房间管理</h2>
         <p className="muted family-face-desc">
-          添加并将「是否开放」设为「是」的房间，采集端与观看端才能信令加入；未添加的房间一律视为未启用。
+          「是否开放」设为「是」的房间，采集端与观看端才能信令加入；未添加的房间一律视为未启用。
           <br />
-          陌生人警告按房间配置：开启后，两端在做人脸检测且识别为陌生人时才会调用告警接口。
+          「最多查看端」为同时允许的观看端数量。
+          <br />
+          「陌生人警告」按房间配置：开启后，两端在做人脸检测且识别为陌生人时才会调用告警接口。
         </p>
 
         <div className="admin-section-toolbar">
@@ -756,7 +788,16 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
           onCancel={() => setAddModalOpen(false)}
           onOk={() => void submitAddRoomModal()}
         >
-          <Form form={addForm} layout="vertical" initialValues={{ allowConnect: true, strangerFaceAlert: false }} preserve={false}>
+          <Form
+            form={addForm}
+            layout="vertical"
+            initialValues={{
+              allowConnect: true,
+              strangerFaceAlert: false,
+              maxViewersPerRoom: 2
+            }}
+            preserve={false}
+          >
             <Form.Item
               name="roomId"
               label="房间 ID"
@@ -772,6 +813,23 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
                 <Radio value={true}>是</Radio>
                 <Radio value={false}>否</Radio>
               </Radio.Group>
+            </Form.Item>
+            <Form.Item
+              name="maxViewersPerRoom"
+              label="最多查看端"
+              rules={[
+                {
+                  validator: (_, value) => {
+                    const n = value === null || value === undefined ? NaN : Number(value)
+                    if (!Number.isInteger(n) || n < 1 || n > 99) {
+                      return Promise.reject(new Error('请输入 1～99 的整数'))
+                    }
+                    return Promise.resolve()
+                  }
+                }
+              ]}
+            >
+              <InputNumber min={1} max={99} precision={0} style={{ width: '100%' }} placeholder="不含采集端" />
             </Form.Item>
             <Form.Item name="strangerFaceAlert" label="陌生人警告">
               <Radio.Group>
@@ -806,6 +864,23 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
                   <Radio value={true}>是</Radio>
                   <Radio value={false}>否</Radio>
                 </Radio.Group>
+              </Form.Item>
+              <Form.Item
+                name="maxViewersPerRoom"
+                label="最多查看端"
+                rules={[
+                  {
+                    validator: (_, value) => {
+                      const n = value === null || value === undefined ? NaN : Number(value)
+                      if (!Number.isInteger(n) || n < 1 || n > 99) {
+                        return Promise.reject(new Error('请输入 1～99 的整数'))
+                      }
+                      return Promise.resolve()
+                    }
+                  }
+                ]}
+              >
+                <InputNumber min={1} max={99} precision={0} style={{ width: '100%' }} placeholder="不含采集端" />
               </Form.Item>
               <Form.Item name="strangerFaceAlert" label="陌生人警告">
                 <Radio.Group>

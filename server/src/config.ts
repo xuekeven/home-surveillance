@@ -1,13 +1,13 @@
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { config as loadDotenv } from 'dotenv'
 import type { IceServer } from './types.js'
-import { applyEcosystemDevelopmentEnv } from './loadEcosystemDevEnv.js'
 
-// 生产：PM2 使用 ecosystem.config.cjs 的 env。
-// 开发：同一文件的 env_development；可选根目录 .env 覆盖（dotenv 默认不覆盖已有变量）。
-if (process.env.NODE_ENV !== 'production') {
-  applyEcosystemDevelopmentEnv()
-  loadDotenv()
-}
+const configDir = path.dirname(fileURLToPath(import.meta.url))
+/** `src/config.ts` 与 `dist/config.js` 均在 server 包内；再上溯一级为 monorepo 根目录 */
+const repoRootEnvPath = path.resolve(configDir, '..', '..', '.env')
+
+loadDotenv({ path: repoRootEnvPath })
 
 const DEFAULT_ICE_SERVERS: IceServer[] = [
   { urls: 'stun:stun.l.google.com:19302' },
@@ -74,21 +74,20 @@ export const config = {
   port: parseInteger(process.env.PORT, 3000),
   publicBasePath: normalizeBasePath(process.env.PUBLIC_BASE_PATH),
   roomToken: process.env.ROOM_TOKEN || 'change-me',
+  /** 房间策略 JSON 未写 maxViewersPerRoom 时的默认观看端上限（每房间可在后台单独设置） */
   maxViewersPerRoom: parseInteger(process.env.MAX_VIEWERS_PER_ROOM, 2),
   allowedOrigins: parseOrigins(process.env.ALLOWED_ORIGINS),
   iceServers: parseIceServers(process.env.ICE_SERVERS_JSON),
-  /** 企微中转服务基址，无末尾斜杠；未设置环境变量时默认 Tailscale 上 relay */
-  weworkRelayUrl: (process.env.WEWORK_RELAY_URL || 'http://aliserver.tailed5977.ts.net:5001')
-    .trim()
-    .replace(/\/$/, ''),
+  /** 企微中转服务基址，无末尾斜杠；未配置则不调用 relay */
+  weworkRelayUrl: (process.env.WEWORK_RELAY_URL || '').trim().replace(/\/$/, ''),
   weworkRelayApiKey: (process.env.WEWORK_RELAY_API_KEY || '').trim(),
   weworkRelayTouser: (process.env.WEWORK_RELAY_TOUSER || '').trim() || undefined,
   faceAlertOriginPrimary:
-    (process.env.FACE_ALERT_ORIGIN_PRIMARY || 'https://homeserver.tailed5977.ts.net').trim().replace(/\/$/, ''),
+    (process.env.FACE_ALERT_ORIGIN_PRIMARY || 'https://localhost').trim().replace(/\/$/, ''),
   faceAlertOriginSecondary:
-    (process.env.FACE_ALERT_ORIGIN_SECONDARY || 'https://www.kaitool.top').trim().replace(/\/$/, ''),
+    (process.env.FACE_ALERT_ORIGIN_SECONDARY || 'https://localhost').trim().replace(/\/$/, ''),
   faceAlertCooldownMs: parseInteger(process.env.FACE_ALERT_COOLDOWN_MS, 120000),
-  /** 后台管理接口密钥（勿写入前端构建）；空字符串则禁用所有 /api/admin/* 写操作相关校验 */
+  /** 后台管理接口密钥（勿写入前端构建）；空字符串则禁用相关校验 */
   adminToken: (process.env.ADMIN_TOKEN || '').trim()
 }
 

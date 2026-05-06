@@ -110,6 +110,7 @@ export async function adminDeleteFamilyMember(adminToken: string, id: string): P
 export type RoomPolicyClient = {
   enabled: boolean
   strangerFaceAlert: boolean
+  maxViewersPerRoom: number
 }
 
 export async function adminFetchRooms(adminToken: string): Promise<Record<string, RoomPolicyClient>> {
@@ -127,7 +128,7 @@ export async function adminFetchRooms(adminToken: string): Promise<Record<string
 export async function adminPatchRoom(
   adminToken: string,
   roomId: string,
-  patch: { enabled?: boolean; strangerFaceAlert?: boolean }
+  patch: { enabled?: boolean; strangerFaceAlert?: boolean; maxViewersPerRoom?: number }
 ): Promise<void> {
   const res = await fetch(apiAdminRoomUrl(roomId), {
     method: 'PATCH',

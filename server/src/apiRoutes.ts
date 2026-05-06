@@ -342,7 +342,22 @@ export function mountApi(app: Express, apiPrefix: string): void {
 
     const rawEnabled = request.body?.enabled
     const rawAlert = request.body?.strangerFaceAlert
-    if (typeof rawEnabled !== 'boolean' && typeof rawAlert !== 'boolean') {
+    const rawMaxViewers = request.body?.maxViewersPerRoom
+
+    let maxViewersPatch: number | undefined
+    if (rawMaxViewers !== undefined && rawMaxViewers !== null) {
+      if (typeof rawMaxViewers !== 'number' || !Number.isFinite(rawMaxViewers)) {
+        response.status(400).json({ error: 'invalid_max_viewers_per_room' })
+        return
+      }
+      maxViewersPatch = Math.max(1, Math.min(99, Math.floor(rawMaxViewers)))
+    }
+
+    if (
+      typeof rawEnabled !== 'boolean' &&
+      typeof rawAlert !== 'boolean' &&
+      maxViewersPatch === undefined
+    ) {
       response.status(400).json({ error: 'no_fields_to_patch' })
       return
     }
@@ -350,7 +365,8 @@ export function mountApi(app: Express, apiPrefix: string): void {
     try {
       const policy = await patchRoomPolicy(roomId, {
         ...(typeof rawEnabled === 'boolean' ? { enabled: rawEnabled } : {}),
-        ...(typeof rawAlert === 'boolean' ? { strangerFaceAlert: rawAlert } : {})
+        ...(typeof rawAlert === 'boolean' ? { strangerFaceAlert: rawAlert } : {}),
+        ...(maxViewersPatch !== undefined ? { maxViewersPerRoom: maxViewersPatch } : {})
       })
       response.json({ ok: true, roomId, ...policy })
     } catch (error) {

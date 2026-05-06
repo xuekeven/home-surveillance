@@ -74,10 +74,41 @@
 
 ## 运行时配置
 
-开发与生产均以根目录 `ecosystem.config.cjs` 为准：
+- **环境变量**：仓库根目录 `.env`（勿提交）。可复制 `[.env.example](.env.example)` 为 `.env` 后按需填写。
+- **本地开发**：`npm run dev` 由 `[scripts/run-dev.mjs](scripts/run-dev.mjs)` 先加载根 `.env`，再并发启动 `server` 与 `web`，使 `PORT`、`ALLOWED_ORIGINS`、`VITE_*` 等与后端一致。
+- **生产**：Node 进程启动时由服务端 `[server/src/config.ts](server/src/config.ts)` 通过 dotenv 读取同一套根 `.env`。PM2 形态见 `[ecosystem.config.cjs](ecosystem.config.cjs)`（进程入口为编译后的 `server/dist/index.js`，变量仍来自宿主 `.env`）。细节见 `[docs/5.部署方案.md](docs/5.部署方案.md)`。
+- **房间观看端上限**：新建房间的默认值由服务端内置（默认最多 **2** 个 viewer）；可按房间在后台 `/admin` 调整持久化配置（`maxViewersPerRoom`）。无需也不建议在 `.env` 中配置此项。
 
-- `env_development` 供本地 `npm run dev`（经 `scripts/run-dev.mjs` 注入）及 `pm2 start … --env development`；
-- `env` 供生产 PM2。可选将 `env.development.example` 复制为根目录 `.env` 做本地覆盖。细节见 `[docs/5.部署方案.md](docs/5.部署方案.md)`。
+### 与告警相关的变量（摘要）
+
+| 变量 | 作用 |
+| --- | --- |
+| `WEWORK_RELAY_*`、`FACE_ALERT_ORIGIN_*` | 企微告警中转与推送正文里的观看入口链接 |
+| `FACE_ALERT_COOLDOWN_MS` | **服务端**同一房间连续告警最短间隔（防抖） |
+| `ADMIN_TOKEN` | 非空则启用 `/api/admin/*` 后台管理能力 |
+
+采集端还有 **前端常量**（未暴露在 `.env`）：陌生人 **企微告警** 需同一轨迹连续被判为陌生人约 **1 秒** 后才计入人数；**陌生人抓拍**按 **当前帧** 瞬时人数触发。告警另有客户端间隔（约 60s），抓拍另有全局限频（约 60s）。详见 `[web/src/shared/faceAnalysisOverlay.tsx](web/src/shared/faceAnalysisOverlay.tsx)`。
+
+## 前端路由
+
+| 路径 | 说明 |
+| --- | --- |
+| `/viewer/:roomId` | 观看端 |
+| `/camera/:roomId` | 采集端（摄像头 + 人脸叠加可选） |
+| `/admin` | 后台（须配置 `ADMIN_TOKEN`） |
+| `/` | 默认重定向至 `/viewer/home` |
+
+路由定义见 `[web/src/routes.tsx](web/src/routes.tsx)`；`PUBLIC_BASE_PATH` / `VITE_PUBLIC_BASE_PATH` 会为上述路径加前缀。
+
+## 人脸流程与数据落盘（摘要）
+
+- **检测**：MediaPipe 人脸框；轨迹须满足「移动活体」后才作为稳定人脸参与后续逻辑。
+- **识别**：face-api 仅在 **近似正面** 姿态下与家庭成员描述向量比对；侧面或非正面轨迹不参与陌生人告警依据。
+- **告警**：调用 `[POST …/api/wework/face-alert](server/src/apiRoutes.ts)`；房间须在策略中开启陌生人脸告警，且受服务端冷却时间约束。
+- **陌生人抓拍**：合成视频帧 + 叠加层后 `POST …/api/stranger-screenshots`，PNG 写入仓库根目录 **`images/stranger/`**（见 `[server/src/persist/dir.ts](server/src/persist/dir.ts)`）。
+- **持久化**：家庭成员与房间策略 JSON 位于 **`server/data/`**（运行时自动创建）。
+
+面向采集端/观看端的只读接口（如家庭成员列表、房间策略）使用 **`Authorization: Bearer <ROOM_TOKEN>`**。后台接口使用 **`Bearer <ADMIN_TOKEN>`**。完整列表见 `[server/src/apiRoutes.ts](server/src/apiRoutes.ts)`。
 
 ## 文档
 
@@ -97,6 +128,6 @@
 4. 外部自用设备通过 Tailscale 观看端跑通 WebRTC Mesh。
 5. `aliserver` 通过 Tailscale 反向代理到 `homeserver`，配置 Nginx 公网入口。
 6. 在阿里云部署 coturn，并开放安全组 UDP 端口。
-7. 加入 HTTPS、鉴权、房间口令、连接状态和 TURN fallback。
+7. 加入 HTTPS、`ROOM_TOKEN` 鉴权、房间策略（含观看端上限与陌生人告警开关）、后台 `/admin`、`FACE_ALERT_*` / 企微中转与 TURN fallback。
 8. 外部自用设备通过公网域名观看端跑通 WebRTC Mesh。
 

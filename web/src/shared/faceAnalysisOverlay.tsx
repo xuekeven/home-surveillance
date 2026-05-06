@@ -7,12 +7,15 @@ import {
   matchFamilyMember,
   MIN_FACE_DETECTOR_IOU
 } from './faceRecognitionCompare'
+import { isRoughlyFrontalFaceLandmarks } from './facePoseFrontal'
 import { postFaceAlert } from './faceAlertApi'
 import { compositeVideoFrameWithOverlay, postStrangerScreenshots } from './strangerSnapshot'
 import { createFaceTrackerState, stepFaceTracks, type FaceTrackerState, type TrackedFace } from './faceTracking'
 
 const CLIENT_FACE_ALERT_DEBOUNCE_MS = 60_000
 const STRANGER_SCREENSHOT_DEBOUNCE_MS = 60_000
+/** 企微告警：同一轨迹须连续被判为「陌生人」满此时长后才计入人数；抓拍不占此项 */
+const STRANGER_CONFIRM_HOLD_MS = 1000
 const FACE_API_CLASSIFY_INTERVAL_FRAMES = 14
 
 const MEDIAPIPE_WASM_BASE = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.21/wasm'
@@ -93,35 +96,72 @@ async function createDetector(): Promise<FaceDetector> {
   }
 }
 
-type TrackFaceIdentity = { kind: 'family'; memberLabel: string } | { kind: 'stranger' }
+type TrackFaceIdentity =
+  | { kind: 'family'; memberLabel: string }
+  | { kind: 'stranger' }
+  | { kind: 'non_frontal' }
 
-function shouldSendFaceAlert(
-  tracked: TrackedFace[],
-  familyMembers: StoredFamilyMember[],
-  identities: Map<number, TrackFaceIdentity>
-): boolean {
-  if (tracked.length === 0) {
-    return false
+/** 维护「陌生人」连续区间的起始时间；非陌生人或非当前帧轨迹会从 Map 移除 */
+function syncStrangerHoldStarts(
+  holdStarts: Map<number, number>,
+  confirmedFaces: TrackedFace[],
+  identities: Map<number, TrackFaceIdentity>,
+  nowMs: number
+): void {
+  const inFrame = new Set<number>()
+  for (let i = 0; i < confirmedFaces.length; i++) {
+    inFrame.add(confirmedFaces[i].id)
   }
-  if (familyMembers.length === 0) {
-    return true
+  for (const key of [...holdStarts.keys()]) {
+    if (!inFrame.has(key)) {
+      holdStarts.delete(key)
+    }
   }
-  return tracked.some((t) => identities.get(t.id)?.kind === 'stranger')
+  for (let i = 0; i < confirmedFaces.length; i++) {
+    const id = confirmedFaces[i].id
+    if (identities.get(id)?.kind === 'stranger') {
+      if (!holdStarts.has(id)) {
+        holdStarts.set(id, nowMs)
+      }
+    } else {
+      holdStarts.delete(id)
+    }
+  }
 }
 
-/** 当前帧中计入告警的人脸数（均已 motionLive）：无家庭成员登记时按全部确认人脸；有登记时仅统计陌生人轨 */
-function countStrangerFacesForAlert(
-  tracked: TrackedFace[],
-  familyMembers: StoredFamilyMember[],
+function countStrangersAfterHold(
+  confirmedFaces: TrackedFace[],
+  identities: Map<number, TrackFaceIdentity>,
+  holdStarts: Map<number, number>,
+  nowMs: number,
+  minHeldMs: number
+): number {
+  let n = 0
+  for (let i = 0; i < confirmedFaces.length; i++) {
+    const id = confirmedFaces[i].id
+    if (identities.get(id)?.kind !== 'stranger') {
+      continue
+    }
+    const t0 = holdStarts.get(id)
+    if (t0 !== undefined && nowMs - t0 >= minHeldMs) {
+      n++
+    }
+  }
+  return n
+}
+
+/** 抓拍：当前帧 identity 为陌生人的轨迹数（不等告警用的连续时长） */
+function countStrangersImmediate(
+  confirmedFaces: TrackedFace[],
   identities: Map<number, TrackFaceIdentity>
 ): number {
-  if (tracked.length === 0) {
-    return 0
+  let n = 0
+  for (let i = 0; i < confirmedFaces.length; i++) {
+    if (identities.get(confirmedFaces[i].id)?.kind === 'stranger') {
+      n++
+    }
   }
-  if (familyMembers.length === 0) {
-    return tracked.length
-  }
-  return tracked.filter((t) => identities.get(t.id)?.kind === 'stranger').length
+  return n
 }
 
 type FaceAlertNotifyConfig = {
@@ -134,13 +174,14 @@ type FaceAnalysisOverlayProps = {
   videoRef: RefObject<HTMLVideoElement | null>
   active: boolean
   faceAlert?: FaceAlertNotifyConfig
-  /** 家庭成员描述向量；非空时仅「陌生人」在开启上报且后台允许时触发 faceAlert */
+  /** 家庭成员描述向量；比对仅在 face-api 判定为近似正面时进行 */
   familyMembers?: StoredFamilyMember[]
 }
 
 /**
- * MediaPipe 检出人脸框后，仅当轨迹判定为「移动活体」(motionLive) 时才视为「人脸」：
- * 画框、face-api 比对、陌生人告警均只针对这类轨迹；静止照片等一般在未位移阶段不会出现确认框。
+ * MediaPipe 检出人脸框后，仅当轨迹判定为「移动活体」(motionLive) 时才视为「人脸」。
+ * face-api 比对与陌生人告警、抓拍仅在「近似正面」姿态下进行；侧脸、仰视、俯视不参与比对且不作为陌生人告警依据。
+ * 企微告警：陌生人须连续满 STRANGER_CONFIRM_HOLD_MS 才计入人数；抓拍仍按当前帧陌生人瞬时计数（另有 STRANGER_SCREENSHOT_DEBOUNCE_MS）。
  */
 export function FaceAnalysisOverlay({
   videoRef,
@@ -156,11 +197,11 @@ export function FaceAnalysisOverlay({
   const familyMembersRef = useRef(familyMembers)
   familyMembersRef.current = familyMembers
 
-  const lastTrackedCountRef = useRef(0)
-  const lastTrackedListRef = useRef<TrackedFace[]>([])
   const lastClientAlertAtRef = useRef(0)
   const lastStrangerScreenshotAtRef = useRef(0)
   const trackIdentityRef = useRef<Map<number, TrackFaceIdentity>>(new Map())
+  /** 轨迹 id → 最近一次连续「陌生人」判定的起始时间戳（ms） */
+  const strangerHoldStartsRef = useRef<Map<number, number>>(new Map())
 
   const [initError, setInitError] = useState<string | null>(null)
 
@@ -168,6 +209,7 @@ export function FaceAnalysisOverlay({
     if (!active) {
       setInitError(null)
       trackIdentityRef.current.clear()
+      strangerHoldStartsRef.current.clear()
       lastStrangerScreenshotAtRef.current = 0
       const c = canvasRef.current
       const ctx = c?.getContext('2d')
@@ -179,6 +221,7 @@ export function FaceAnalysisOverlay({
 
     trackerRef.current = createFaceTrackerState()
     trackIdentityRef.current = new Map()
+    strangerHoldStartsRef.current.clear()
 
     let cancelled = false
     let detector: FaceDetector | null = null
@@ -186,6 +229,7 @@ export function FaceAnalysisOverlay({
     let lastDetections: Detection[] = []
     let frameTick = 0
     let classifyBusy = false
+    let cachedSsdFaceOpts: faceapi.SsdMobilenetv1Options | undefined
 
     const resizeCanvas = () => {
       const video = videoRef.current
@@ -216,13 +260,8 @@ export function FaceAnalysisOverlay({
       const vh = video.videoHeight
       const rect = videoContentRect(video)
       if (!rect || !vw || !vh) {
-        lastTrackedCountRef.current = 0
-        lastTrackedListRef.current = []
         return
       }
-
-      lastTrackedCountRef.current = confirmedFaces.length
-      lastTrackedListRef.current = confirmedFaces
 
       ctx.font = 'bold 13px system-ui, sans-serif'
       ctx.lineWidth = 3
@@ -230,12 +269,9 @@ export function FaceAnalysisOverlay({
       const membersNonEmpty = familyMembersRef.current.length > 0
       const identities = trackIdentityRef.current
 
-      const strangersForRank = confirmedFaces.filter((f) => {
-        if (!membersNonEmpty) {
-          return true
-        }
-        return identities.get(f.id)?.kind === 'stranger'
-      })
+      const strangersForRank = confirmedFaces.filter(
+        (f) => identities.get(f.id)?.kind === 'stranger'
+      )
       const strangerRank = new Map<number, number>(
         [...strangersForRank].sort((a, b) => a.id - b.id).map((f, i) => [f.id, i + 1])
       )
@@ -244,12 +280,12 @@ export function FaceAnalysisOverlay({
         const ident = identities.get(face.id)
         let stroke: string
         let text: string
-        if (!membersNonEmpty) {
-          stroke = '#d97676'
-          text = `陌生人${strangerRank.get(face.id) ?? 1}`
-        } else if (!ident) {
+        if (!ident) {
           stroke = '#c9b038'
-          text = '识别中…'
+          text = membersNonEmpty ? '识别中…' : '姿态检测中…'
+        } else if (ident.kind === 'non_frontal') {
+          stroke = '#7d92ae'
+          text = '非正面 · 未比对'
         } else if (ident.kind === 'family') {
           stroke = '#5cb894'
           text = `家庭成员 · ${ident.memberLabel.trim()}`
@@ -288,10 +324,6 @@ export function FaceAnalysisOverlay({
         return
       }
 
-      if (familyMembersRef.current.length === 0) {
-        trackIdentityRef.current.clear()
-      }
-
       resizeCanvas()
       const ctx = canvas.getContext('2d')
       if (!ctx || !detector) {
@@ -319,23 +351,27 @@ export function FaceAnalysisOverlay({
 
       const confirmedFaces = tracked.filter((t) => t.motionLive)
 
-      const activeIds = new Set(tracked.map((t) => t.id))
+      const motionLiveIds = new Set<number>()
+      for (let i = 0; i < tracked.length; i++) {
+        const t = tracked[i]
+        if (t.motionLive) {
+          motionLiveIds.add(t.id)
+        }
+      }
       for (const key of [...trackIdentityRef.current.keys()]) {
-        if (!activeIds.has(key)) {
+        if (!motionLiveIds.has(key)) {
           trackIdentityRef.current.delete(key)
         }
       }
-      for (const t of tracked) {
-        if (!t.motionLive) {
-          trackIdentityRef.current.delete(t.id)
-        }
-      }
+
+      const identities = trackIdentityRef.current
+      const nowMs = Date.now()
+      syncStrangerHoldStarts(strangerHoldStartsRef.current, confirmedFaces, identities, nowMs)
 
       draw(ctx, dpr, video, confirmedFaces)
 
       const members = familyMembersRef.current
       if (
-        members.length > 0 &&
         confirmedFaces.length > 0 &&
         frameTick % FACE_API_CLASSIFY_INTERVAL_FRAMES === 0 &&
         !classifyBusy
@@ -348,38 +384,60 @@ export function FaceAnalysisOverlay({
             if (cancelled) {
               return
             }
-            const results = await faceapi
-              .detectAllFaces(video, new faceapi.SsdMobilenetv1Options({ minConfidence: 0.45 }))
-              .withFaceLandmarks()
-              .withFaceDescriptors()
+            cachedSsdFaceOpts ??= new faceapi.SsdMobilenetv1Options({ minConfidence: 0.45 })
+            const lm = faceapi.detectAllFaces(video, cachedSsdFaceOpts).withFaceLandmarks()
+            const results =
+              members.length > 0 ? await lm.withFaceDescriptors() : await lm
 
+            const mpBox = { x: 0, y: 0, width: 0, height: 0 }
             for (const t of snapshot) {
-              const mpBox = {
-                x: t.box.originX,
-                y: t.box.originY,
-                width: t.box.width,
-                height: t.box.height
-              }
+              mpBox.x = t.box.originX
+              mpBox.y = t.box.originY
+              mpBox.width = t.box.width
+              mpBox.height = t.box.height
               let bestIou = 0
-              let bestDesc: Float32Array | null = null
+              let bestLandmarks: { positions: Array<{ x: number; y: number }> } | null = null
+              let bestDesc: Float32Array | undefined
               for (const r of results) {
                 const b = r.detection.box
                 const faBox = { x: b.x, y: b.y, width: b.width, height: b.height }
                 const iou = intersectionOverUnion(mpBox, faBox)
                 if (iou > bestIou) {
                   bestIou = iou
-                  bestDesc = r.descriptor
+                  bestLandmarks = r.landmarks
+                  const d =
+                    'descriptor' in r
+                      ? (r as { descriptor?: Float32Array }).descriptor
+                      : undefined
+                  bestDesc = d instanceof Float32Array ? d : undefined
                 }
               }
-              if (bestIou < MIN_FACE_DETECTOR_IOU || !bestDesc) {
-                trackIdentityRef.current.set(t.id, { kind: 'stranger' })
-              } else {
-                const matched = matchFamilyMember(bestDesc, members)
-                trackIdentityRef.current.set(
-                  t.id,
-                  matched ? { kind: 'family', memberLabel: matched.label } : { kind: 'stranger' }
-                )
+
+              if (bestIou < MIN_FACE_DETECTOR_IOU || !bestLandmarks) {
+                trackIdentityRef.current.set(t.id, { kind: 'non_frontal' })
+                continue
               }
+
+              if (!isRoughlyFrontalFaceLandmarks(bestLandmarks.positions)) {
+                trackIdentityRef.current.set(t.id, { kind: 'non_frontal' })
+                continue
+              }
+
+              if (members.length === 0) {
+                trackIdentityRef.current.set(t.id, { kind: 'stranger' })
+                continue
+              }
+
+              if (!bestDesc) {
+                trackIdentityRef.current.set(t.id, { kind: 'non_frontal' })
+                continue
+              }
+
+              const matched = matchFamilyMember(bestDesc, members)
+              trackIdentityRef.current.set(
+                t.id,
+                matched ? { kind: 'family', memberLabel: matched.label } : { kind: 'stranger' }
+              )
             }
           } catch (err) {
             console.warn('[FaceAnalysisOverlay] face-api classify:', err)
@@ -390,35 +448,31 @@ export function FaceAnalysisOverlay({
       }
 
       const alertCfg = faceAlertRef.current
-      const identities = trackIdentityRef.current
+      const heldStrangerCount = countStrangersAfterHold(
+        confirmedFaces,
+        identities,
+        strangerHoldStartsRef.current,
+        nowMs,
+        STRANGER_CONFIRM_HOLD_MS
+      )
       if (
         alertCfg?.enabled &&
         alertCfg.roomId &&
         alertCfg.token &&
-        shouldSendFaceAlert(confirmedFaces, members, identities)
+        heldStrangerCount > 0
       ) {
-        const strangerCount = Math.max(1, countStrangerFacesForAlert(confirmedFaces, members, identities))
-        const now = Date.now()
-        if (now - lastClientAlertAtRef.current >= CLIENT_FACE_ALERT_DEBOUNCE_MS) {
-          lastClientAlertAtRef.current = now
-          void postFaceAlert(alertCfg.roomId, alertCfg.token, strangerCount)
+        const alertNow = Date.now()
+        if (alertNow - lastClientAlertAtRef.current >= CLIENT_FACE_ALERT_DEBOUNCE_MS) {
+          lastClientAlertAtRef.current = alertNow
+          void postFaceAlert(alertCfg.roomId, alertCfg.token, Math.max(1, heldStrangerCount))
         }
       }
 
-      const strangerSnapCount =
-        confirmedFaces.length === 0
-          ? 0
-          : confirmedFaces.filter((f) => {
-              if (members.length === 0) {
-                return true
-              }
-              return identities.get(f.id)?.kind === 'stranger'
-            }).length
-
+      const snapStrangerCount = countStrangersImmediate(confirmedFaces, identities)
       const snapCfg = faceAlertRef.current
       const snapNow = Date.now()
       if (
-        strangerSnapCount > 0 &&
+        snapStrangerCount > 0 &&
         snapCfg?.roomId &&
         snapCfg?.token &&
         snapNow - lastStrangerScreenshotAtRef.current >= STRANGER_SCREENSHOT_DEBOUNCE_MS
@@ -430,7 +484,7 @@ export function FaceAnalysisOverlay({
             roomId: snapCfg.roomId,
             token: snapCfg.token,
             imageDataUrl: dataUrl,
-            strangerCount: strangerSnapCount
+            strangerCount: snapStrangerCount
           })
         }
       }
