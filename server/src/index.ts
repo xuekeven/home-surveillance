@@ -5,7 +5,7 @@ import http from 'node:http'
 import { Server } from 'socket.io'
 import { apiMountPrefix, config, isAllowedOrigin, socketIoHttpPath } from './config.js'
 import { mountApi } from './apiRoutes.js'
-import { ensureDataDir, ensureStrangerImagesDir } from './persist/dir.js'
+import { ensureDataDir, ensureStrangerImagesDir, STRANGER_IMAGES_DIR } from './persist/dir.js'
 import { registerSocketHandlers } from './socket.js'
 
 const __filename = fileURLToPath(import.meta.url)
@@ -64,6 +64,7 @@ async function main(): Promise<void> {
     console.log(
       `home-surveillance listening on http://localhost:${config.port} (api ${apiPrefix} socket.io path ${socketPath})`
     )
+    console.log(`stranger screenshots -> ${STRANGER_IMAGES_DIR}`)
   })
 }
 
