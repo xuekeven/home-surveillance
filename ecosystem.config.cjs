@@ -44,7 +44,8 @@ module.exports = {
         ICE_SERVERS_JSON: devIce,
         /** 企微中转 wework-send；留空则检测到人脸也不调用 relay */
         WEWORK_RELAY_URL: 'http://aliserver.tailed5977.ts.net:5001',
-        WEWORK_RELAY_API_KEY: '1d36fdb5219ccacdc437fc87b9609df5eac29df7ae4db1a93f379fe03552a1dd'
+        WEWORK_RELAY_API_KEY: '1d36fdb5219ccacdc437fc87b9609df5eac29df7ae4db1a93f379fe03552a1dd',
+        ADMIN_TOKEN: 'admin-change-me-home-surveillance'
       },
       env_development: {
         NODE_ENV: 'development',
@@ -56,6 +57,7 @@ module.exports = {
         ICE_SERVERS_JSON: devIce,
         WEWORK_RELAY_URL: 'http://aliserver.tailed5977.ts.net:5001',
         WEWORK_RELAY_API_KEY: '1d36fdb5219ccacdc437fc87b9609df5eac29df7ae4db1a93f379fe03552a1dd',
+        ADMIN_TOKEN: 'admin-change-me-home-surveillance',
         VITE_PUBLIC_BASE_PATH: '/',
         VITE_ROOM_TOKEN: 'xuekaixihuanshenshiyi',
         VITE_ICE_SERVERS_JSON: devIce

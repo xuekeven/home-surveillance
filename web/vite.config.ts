@@ -40,6 +40,9 @@ export default defineConfig({
     }
   },
   plugins: [react()],
+  optimizeDeps: {
+    include: ['face-api.js']
+  },
   server: {
     port: 5173,
     proxy: devProxyTargets(devBackend)

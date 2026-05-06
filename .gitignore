@@ -4,3 +4,7 @@ dist/
 npm-debug.log*
 *.tsbuildinfo
 .DS_Store
+server/data/*.json
+
+images/stranger/*
+!images/stranger/.gitkeep

@@ -1,6 +1,7 @@
 import type { Server, Socket } from 'socket.io'
 import { isAuthorized } from './auth.js'
 import { config } from './config.js'
+import { checkRoomJoin } from './persist/roomPoliciesRepo.js'
 import {
   getClient,
   getRoom,
@@ -105,7 +106,7 @@ function isSignalPayload(payload: unknown): payload is SignalPayload {
   )
 }
 
-function handleJoinRoom(io: Server, socket: Socket, payload: unknown): void {
+async function handleJoinRoom(io: Server, socket: Socket, payload: unknown): Promise<void> {
   if (!isJoinRoomPayload(payload)) {
     sendRoomError(socket, 'join-room 参数无效')
     return
@@ -113,6 +114,15 @@ function handleJoinRoom(io: Server, socket: Socket, payload: unknown): void {
 
   if (!isAuthorized(payload)) {
     sendRoomError(socket, '房间口令无效')
+    return
+  }
+
+  const joinCheck = await checkRoomJoin(payload.roomId)
+  if (!joinCheck.ok) {
+    sendRoomError(
+      socket,
+      joinCheck.reason === 'room_missing' ? '房间不存在' : '房间未开放，请联系管理员'
+    )
     return
   }
 
@@ -255,7 +265,9 @@ function handleDisconnect(io: Server, socket: Socket): void {
 
 export function registerSocketHandlers(io: Server): void {
   io.on('connection', (socket) => {
-    socket.on('join-room', (payload) => handleJoinRoom(io, socket, payload))
+    socket.on('join-room', (payload) => {
+      void handleJoinRoom(io, socket, payload)
+    })
     socket.on('signal', (payload) => handleSignal(io, socket, payload))
     socket.on('camera-catalog', (payload) => handleCameraCatalog(io, socket, payload))
     socket.on('switch-camera', (payload) => handleSwitchCamera(io, socket, payload))

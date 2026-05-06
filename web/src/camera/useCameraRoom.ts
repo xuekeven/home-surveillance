@@ -68,6 +68,8 @@ export function useCameraRoom(roomId: string) {
   const peersRef = useRef<Map<string, PeerInstance>>(new Map())
   const socketHandshakeWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [viewerInboundAudio, setViewerInboundAudio] = useState<Record<string, MediaStream>>({})
+  const pendingViewersRef = useRef<string[]>([])
+  const roomCaptureStartedRef = useRef(false)
 
   const refreshCameraCatalog = useCallback(
     async (stream: MediaStream) => {
@@ -259,6 +261,8 @@ export function useCameraRoom(roomId: string) {
   const start = useCallback(async () => {
     setError(undefined)
     setStatus('connecting-socket')
+    pendingViewersRef.current = []
+    roomCaptureStartedRef.current = false
 
     try {
       if (!window.isSecureContext) {
@@ -266,15 +270,7 @@ export function useCameraRoom(roomId: string) {
       }
       assertWebRtcSupport()
 
-      const [iceServers, stream] = await Promise.all([
-        getIceServers(),
-        getCameraCaptureStream()
-      ])
-
-      iceServersRef.current = iceServers
-      streamRef.current = stream
-      setLocalStream(stream)
-      void refreshCameraCatalog(stream)
+      iceServersRef.current = await getIceServers()
 
       const socket = createSocket()
       socketRef.current = socket
@@ -284,6 +280,20 @@ export function useCameraRoom(roomId: string) {
           clearTimeout(socketHandshakeWatchdogRef.current)
           socketHandshakeWatchdogRef.current = null
         }
+      }
+
+      const denyMediaAndPeers = () => {
+        for (const peer of peersRef.current.values()) {
+          peer.destroy()
+        }
+        peersRef.current.clear()
+        streamRef.current?.getTracks().forEach((track) => track.stop())
+        streamRef.current = null
+        setLocalStream(undefined)
+        setCameraDevices([])
+        setActiveCameraId('')
+        setViewers([])
+        setViewerInboundAudio({})
       }
 
       socketHandshakeWatchdogRef.current = setTimeout(() => {
@@ -299,7 +309,7 @@ export function useCameraRoom(roomId: string) {
       socket.on('connect', () => {
         clearHandshakeWatchdog()
         setSocketConnected(true)
-        setStatus('waiting-viewer')
+        setStatus('joining-room')
         socket.emit('join-room', {
           roomId,
           role: 'camera',
@@ -315,14 +325,53 @@ export function useCameraRoom(roomId: string) {
 
       socket.on('disconnect', () => {
         setSocketConnected(false)
-        setStatus('disconnected')
+        setStatus((prev) => {
+          if (prev === 'idle') {
+            return 'idle'
+          }
+          if (prev === 'error') {
+            return 'error'
+          }
+          return 'disconnected'
+        })
+      })
+
+      socket.on('room-state', () => {
+        if (roomCaptureStartedRef.current) {
+          return
+        }
+        roomCaptureStartedRef.current = true
+        void (async () => {
+          try {
+            setStatus('connecting-media')
+            const stream = await getCameraCaptureStream()
+            streamRef.current = stream
+            setLocalStream(stream)
+            await refreshCameraCatalog(stream)
+            setStatus('waiting-viewer')
+
+            const pending = [...pendingViewersRef.current]
+            pendingViewersRef.current = []
+            for (const viewerSocketId of pending) {
+              createPeerForViewer(viewerSocketId)
+            }
+          } catch (captureErr) {
+            roomCaptureStartedRef.current = false
+            pendingViewersRef.current = []
+            denyMediaAndPeers()
+            setError(captureErr instanceof Error ? captureErr.message : '采集端启动失败')
+            setStatus('error')
+          }
+        })()
       })
 
       socket.on('viewer-joined', ({ viewerSocketId }: ViewerJoinedMessage) => {
-        createPeerForViewer(viewerSocketId)
         const s = streamRef.current
         if (s) {
+          createPeerForViewer(viewerSocketId)
           void refreshCameraCatalog(s)
+        } else {
+          pendingViewersRef.current.push(viewerSocketId)
         }
       })
 
@@ -335,6 +384,10 @@ export function useCameraRoom(roomId: string) {
       })
 
       socket.on('room-error', ({ message }: RoomErrorMessage) => {
+        clearHandshakeWatchdog()
+        roomCaptureStartedRef.current = false
+        pendingViewersRef.current = []
+        denyMediaAndPeers()
         setError(message)
         setStatus('error')
       })
@@ -377,6 +430,8 @@ export function useCameraRoom(roomId: string) {
     streamRef.current?.getTracks().forEach((track) => track.stop())
     streamRef.current = null
     setLocalStream(undefined)
+    pendingViewersRef.current = []
+    roomCaptureStartedRef.current = false
     setViewers([])
     setViewerInboundAudio({})
     setCameraDevices([])

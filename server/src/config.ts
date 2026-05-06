@@ -87,7 +87,9 @@ export const config = {
     (process.env.FACE_ALERT_ORIGIN_PRIMARY || 'https://homeserver.tailed5977.ts.net').trim().replace(/\/$/, ''),
   faceAlertOriginSecondary:
     (process.env.FACE_ALERT_ORIGIN_SECONDARY || 'https://www.kaitool.top').trim().replace(/\/$/, ''),
-  faceAlertCooldownMs: parseInteger(process.env.FACE_ALERT_COOLDOWN_MS, 120000)
+  faceAlertCooldownMs: parseInteger(process.env.FACE_ALERT_COOLDOWN_MS, 120000),
+  /** 后台管理接口密钥（勿写入前端构建）；空字符串则禁用所有 /api/admin/* 写操作相关校验 */
+  adminToken: (process.env.ADMIN_TOKEN || '').trim()
 }
 
 /** Express REST：`/api/*` 或 `{PUBLIC_BASE_PATH}/api/*` */

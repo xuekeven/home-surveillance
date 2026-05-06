@@ -11,9 +11,10 @@ export function buildViewerUrls(roomId: string): { url1: string; url2: string } 
   }
 }
 
-export function formatFaceAlertContent(roomId: string): string {
+export function formatFaceAlertContent(roomId: string, strangerCount: number): string {
   const { url1, url2 } = buildViewerUrls(roomId)
-  return `[${roomId}]视频监控检测到人脸/活体，请及时关注！点击 ${url1} 或者 ${url2} 查看视频监控。`
+  const n = Math.max(1, Math.floor(strangerCount))
+  return `【${roomId}】视频监控检测到【${n}】个陌生人脸，请及时关注！\n点击 ${url1} 或者 ${url2} 查看实时视频监控。`
 }
 
 export type FaceAlertDispatchResult =
@@ -24,10 +25,12 @@ export type FaceAlertDispatchResult =
 /**
  * 调用 wework-send 转发文本；同一 roomId 在 faceAlertCooldownMs 内只发送一次。
  */
-export async function dispatchFaceAlert(roomId: string): Promise<FaceAlertDispatchResult> {
+export async function dispatchFaceAlert(roomId: string, strangerCount: number): Promise<FaceAlertDispatchResult> {
   if (!config.weworkRelayUrl || !config.weworkRelayApiKey) {
     return { ok: false, skipped: true, reason: 'relay_not_configured' }
   }
+
+  const count = Number.isFinite(strangerCount) ? Math.max(1, Math.min(99, Math.floor(strangerCount))) : 1
 
   const now = Date.now()
   const until = roomCooldownUntil.get(roomId) ?? 0
@@ -35,7 +38,7 @@ export async function dispatchFaceAlert(roomId: string): Promise<FaceAlertDispat
     return { ok: false, skipped: true, reason: 'cooldown' }
   }
 
-  const content = formatFaceAlertContent(roomId)
+  const content = formatFaceAlertContent(roomId, count)
   const url = `${config.weworkRelayUrl}/wework/send/message`
 
   const response = await fetch(url, {

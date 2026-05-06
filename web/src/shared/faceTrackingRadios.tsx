@@ -4,7 +4,7 @@ type FaceTrackingRadiosProps = {
   onChange: (enabled: boolean) => void
 }
 
-/** 扬声器下方：人脸与活体跟踪总开关（两端共用） */
+/** 扬声器下方：人脸检测总开关（仅「移动活体」确认的轨迹计为人脸，两端共用） */
 export function FaceTrackingRadios({ idPrefix, enabled, onChange }: FaceTrackingRadiosProps) {
   const name = `${idPrefix}-face-tracking`
   const legendId = `${idPrefix}-face-tracking-legend`
@@ -12,7 +12,7 @@ export function FaceTrackingRadios({ idPrefix, enabled, onChange }: FaceTracking
     <fieldset className="face-tracking-fieldset" aria-labelledby={legendId}>
       <div className="face-tracking-row">
         <span id={legendId} className="face-tracking-field-label">
-          人脸和活体跟踪检测
+          人脸检测
         </span>
         <div className="face-tracking-options">
           <label htmlFor={`${idPrefix}-face-tracking-on`}>

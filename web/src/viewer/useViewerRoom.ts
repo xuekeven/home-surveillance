@@ -236,7 +236,15 @@ export function useViewerRoom(roomId: string) {
 
       socket.on('disconnect', () => {
         setSocketConnected(false)
-        setStatus('disconnected')
+        setStatus((prev) => {
+          if (prev === 'idle') {
+            return 'idle'
+          }
+          if (prev === 'error') {
+            return 'error'
+          }
+          return 'disconnected'
+        })
       })
 
       socket.on('room-state', ({ hasCamera, viewerCount: nextViewerCount }: RoomStateMessage) => {
