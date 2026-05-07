@@ -8,7 +8,6 @@ import { FaceTrackingRadios } from '../shared/faceTrackingRadios'
 import { statusLabel } from '../shared/status'
 import { ROOM_MISSING_MESSAGE } from '../shared/roomJoinMessages'
 import { useFamilyMembers } from '../shared/useFamilyMembers'
-import { useRoomStrangerAlert } from '../shared/useRoomStrangerAlert'
 import { appConfig } from '../config'
 import { useViewerRoom } from './useViewerRoom'
 
@@ -46,7 +45,6 @@ export function ViewerPage() {
   const [faceTrackingEnabled, setFaceTrackingEnabled] = useState(true)
 
   const familyMembers = useFamilyMembers(appConfig.roomToken)
-  const strangerFaceAlertOn = useRoomStrangerAlert(appConfig.roomToken, roomId)
 
   const roomMissing = error === ROOM_MISSING_MESSAGE
 
@@ -90,11 +88,6 @@ export function ViewerPage() {
                 videoRef={videoRef}
                 active={Boolean(remoteStream) && faceTrackingEnabled}
                 familyMembers={familyMembers}
-                faceAlert={{
-                  roomId,
-                  token: appConfig.roomToken,
-                  enabled: faceTrackingEnabled && Boolean(remoteStream) && strangerFaceAlertOn
-                }}
               />
             </div>
 

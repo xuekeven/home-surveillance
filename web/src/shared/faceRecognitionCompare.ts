@@ -1,7 +1,7 @@
 import type { StoredFamilyMember } from './familyMemberTypes'
 
 /** 欧氏距离阈值：越小越严格（光照/角度会影响，家用可略放宽） */
-export const DEFAULT_FAMILY_DISTANCE_THRESHOLD = 0.56
+export const DEFAULT_FAMILY_DISTANCE_THRESHOLD = 0.45
 
 /** MediaPipe 框与 face-api 框的最小 IoU，低于则认为未对齐 */
 export const MIN_FACE_DETECTOR_IOU = 0.12
