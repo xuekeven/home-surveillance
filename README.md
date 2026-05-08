@@ -77,12 +77,13 @@
 - **环境变量**：仓库根目录 `.env`（勿提交）。可复制 `[.env.example](.env.example)` 为 `.env` 后按需填写。
 - **本地开发**：`npm run dev` 由 `[scripts/run-dev.mjs](scripts/run-dev.mjs)` 先加载根 `.env`，再并发启动 `server` 与 `web`，使 `PORT`、`ALLOWED_ORIGINS`、`VITE_*` 等与后端一致。
 - **生产**：Node 进程启动时由服务端 `[server/src/config.ts](server/src/config.ts)` 通过 dotenv 读取同一套根 `.env`。PM2 形态见 `[ecosystem.config.cjs](ecosystem.config.cjs)`（进程入口为编译后的 `server/dist/index.js`，变量仍来自宿主 `.env`）。细节见 `[docs/5.部署方案.md](docs/5.部署方案.md)`。
-- **房间观看端上限**：新建房间的默认值由服务端内置（默认最多 **2** 个 viewer）；可按房间在后台 `/admin` 调整持久化配置（`maxViewersPerRoom`）。无需也不建议在 `.env` 中配置此项。
+- **房间观看端上限**：房间策略 JSON（`server/data/room-policies.json`）若未写 `maxViewersPerRoom`，则回退到服务端配置 `MAX_VIEWERS_PER_ROOM`（环境变量，默认 **2**，范围 1–99）；后台 `/admin` 可按房间持久化覆盖。新建房间条目时，若首次 `patch` 未带该字段，初始上限同样来自 `MAX_VIEWERS_PER_ROOM`。
 
-### 与告警相关的变量（摘要）
+### `.env` 变量摘要（告警 / 观看上限 / 后台）
 
 | 变量 | 作用 |
 | --- | --- |
+| `MAX_VIEWERS_PER_ROOM` | 可选；策略未写 `maxViewersPerRoom` 时的默认观看端上限（默认 **2**） |
 | `WEWORK_RELAY_*`、`FACE_ALERT_ORIGIN_*` | 企微告警中转与推送正文里的观看入口链接 |
 | `FACE_ALERT_COOLDOWN_MS` | **服务端**同一房间连续告警最短间隔（防抖） |
 | `ADMIN_TOKEN` | 非空则启用 `/api/admin/*` 后台管理能力 |
