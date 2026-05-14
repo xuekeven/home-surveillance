@@ -85,7 +85,7 @@ export function CameraPage() {
               <StatusItem label="页面安全上下文" value={isSecureContext ? '是' : '否'} />
               <StatusItem label="信令连接" value={socketConnected ? '已连接' : '未连接'} />
               <StatusItem label="采集端状态" value={statusLabel(status)} />
-              <StatusItem label="观看人数" value={`${viewers.length}`} />
+              <StatusItem label="正在观看" value={`${viewers.length}`} />
               <StatusItem
                 label="麦克风"
                 value={localStream?.getAudioTracks().some((t) => t.readyState === 'live') ? '已采集' : '未采集'}

@@ -106,7 +106,7 @@ export function ViewerPage() {
               <StatusItem label="信令连接" value={socketConnected ? '已连接' : '未连接'} />
               <StatusItem label="采集端在线" value={cameraOnline ? '是' : '否'} />
               <StatusItem label="观看端状态" value={statusLabel(status)} />
-              <StatusItem label="房间观看人数" value={`${viewerCount}`} />
+              <StatusItem label="正在观看" value={`${viewerCount}`} />
               <StatusItem label="ICE 候选路径" value={candidateType || '未知'} />
               <StatusItem
                 label="对话采集"

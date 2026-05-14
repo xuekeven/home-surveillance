@@ -191,7 +191,7 @@ export function useCameraRoom(roomId: string) {
     [destroyPeer, roomId, updateViewer]
   )
 
-  /** 丢弃服务端已不认作在线的 viewer，并拆掉对应 Peer（不包含新增，仍靠 viewer-joined） */
+  /** 丢弃服务端已不认作在线的 viewer，并拆掉对应 Peer */
   const reconcileViewersFromServer = useCallback((viewerSocketIds: string[]) => {
     const allow = new Set(viewerSocketIds)
     setViewers((current) => current.filter((v) => allow.has(v.socketId)))
@@ -202,6 +202,34 @@ export function useCameraRoom(roomId: string) {
     }
   }, [destroyPeer])
 
+  /**
+   * 以服务端房间的 viewerSocketIds 为准：补全待发或立即建 Peer，避免先于采集流就绪的 viewer
+   * 只靠 pending 时出现漏建连；并让「有无观看」与 reconcile 对齐。
+   */
+  const mergeServerViewerList = useCallback(
+    (viewerSocketIds: string[]) => {
+      const allowIds = [...new Set(viewerSocketIds)]
+
+      reconcileViewersFromServer(allowIds)
+      pendingViewersRef.current = pendingViewersRef.current.filter((id) => allowIds.includes(id))
+
+      if (!streamRef.current) {
+        for (const id of allowIds) {
+          if (!pendingViewersRef.current.includes(id)) {
+            pendingViewersRef.current.push(id)
+          }
+        }
+        return
+      }
+
+      for (const id of allowIds) {
+        if (!peersRef.current.has(id)) {
+          createPeerForViewer(id)
+        }
+      }
+    },
+    [createPeerForViewer, reconcileViewersFromServer]
+  )
 
   const switchCamera = useCallback(
     async (deviceId: string, options?: { viewerSocketId?: string }) => {
@@ -355,7 +383,7 @@ export function useCameraRoom(roomId: string) {
 
       socket.on('room-state', (state: RoomStateFromServer) => {
         if (Array.isArray(state.viewerSocketIds)) {
-          reconcileViewersFromServer(state.viewerSocketIds)
+          mergeServerViewerList(state.viewerSocketIds)
         }
 
         if (roomCaptureStartedRef.current) {
@@ -416,7 +444,7 @@ export function useCameraRoom(roomId: string) {
       setError(startError instanceof Error ? startError.message : '采集端启动失败')
       setStatus('error')
     }
-  }, [createPeerForViewer, destroyPeer, reconcileViewersFromServer, refreshCameraCatalog, roomId])
+  }, [createPeerForViewer, destroyPeer, mergeServerViewerList, refreshCameraCatalog, roomId])
 
   useEffect(() => {
     if (!localStream) {
@@ -433,6 +461,41 @@ export function useCameraRoom(roomId: string) {
     navigator.mediaDevices.addEventListener('devicechange', onDevicesChange)
     return () => navigator.mediaDevices.removeEventListener('devicechange', onDevicesChange)
   }, [localStream, refreshCameraCatalog])
+
+  /** 顶层「采集端状态」须随 viewer 列表变化更新；单靠 media 就绪后的 waiting-viewer 会在已有人观看时仍显示错误文案 */
+  useEffect(() => {
+    if (!localStream || !socketConnected) {
+      return undefined
+    }
+
+    setStatus((prev) => {
+      if (prev === 'error') {
+        return prev
+      }
+      if (
+        prev === 'idle' ||
+        prev === 'connecting-socket' ||
+        prev === 'joining-room' ||
+        prev === 'connecting-media'
+      ) {
+        return prev
+      }
+      if (prev === 'disconnected') {
+        return prev
+      }
+
+      if (viewers.length === 0) {
+        return 'waiting-viewer'
+      }
+      if (viewers.some((v) => v.status === 'connected')) {
+        return 'connected'
+      }
+      if (viewers.some((v) => v.status === 'connecting-webrtc')) {
+        return 'connecting-webrtc'
+      }
+      return 'waiting-viewer'
+    })
+  }, [localStream, socketConnected, viewers])
 
   useEffect(() => {
     if (!localStream || !socketConnected) {
