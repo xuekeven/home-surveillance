@@ -176,19 +176,25 @@ type FaceAnalysisOverlayProps = {
   faceAlert?: FaceAlertNotifyConfig
   /** 家庭成员描述向量；比对仅在 face-api 判定为近似正面时进行 */
   familyMembers?: StoredFamilyMember[]
+  /**
+   * 是否在画面上绘制陌生人红框与标签（不影响检测、告警、抓拍 API）。
+   * 采集端可关以免被当事人看到手机屏幕（抓拍合成图同源 canvas，亦为无框画面）。
+   */
+  showStrangerOverlay?: boolean
 }
 
 /**
  * MediaPipe 检出人脸框后，仅当轨迹判定为「移动活体」(motionLive) 时才视为「人脸」。
  * face-api 比对与陌生人告警、抓拍仅在「近似正面」姿态下进行；侧脸、仰视、俯视不参与比对且不作为陌生人告警依据。
  * 企微告警：陌生人须连续满 STRANGER_CONFIRM_HOLD_MS 才计入人数；抓拍仍按当前帧陌生人瞬时计数（另有 STRANGER_SCREENSHOT_DEBOUNCE_MS）。
- * 叠加层仅对「陌生人」绘制红框与编号标签；家庭成员与识别中 / 非正面等状态不画框。
+ * 叠加层仅对「陌生人」绘制红框与编号标签（可通过 `showStrangerOverlay={false}` 关闭绘制，逻辑仍运行）。
  */
 export function FaceAnalysisOverlay({
   videoRef,
   active,
   faceAlert,
-  familyMembers = []
+  familyMembers = [],
+  showStrangerOverlay = true
 }: FaceAnalysisOverlayProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const trackerRef = useRef<FaceTrackerState>(createFaceTrackerState())
@@ -197,6 +203,9 @@ export function FaceAnalysisOverlay({
 
   const familyMembersRef = useRef(familyMembers)
   familyMembersRef.current = familyMembers
+
+  const showStrangerOverlayRef = useRef(showStrangerOverlay)
+  showStrangerOverlayRef.current = showStrangerOverlay
 
   const lastClientAlertAtRef = useRef(0)
   const lastStrangerScreenshotAtRef = useRef(0)
@@ -357,7 +366,12 @@ export function FaceAnalysisOverlay({
       const nowMs = Date.now()
       syncStrangerHoldStarts(strangerHoldStartsRef.current, confirmedFaces, identities, nowMs)
 
-      draw(ctx, dpr, video, confirmedFaces)
+      if (showStrangerOverlayRef.current) {
+        draw(ctx, dpr, video, confirmedFaces)
+      } else {
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+        ctx.clearRect(0, 0, video.clientWidth, video.clientHeight)
+      }
 
       const members = familyMembersRef.current
       if (

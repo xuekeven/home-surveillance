@@ -4,7 +4,7 @@ type FaceTrackingRadiosProps = {
   onChange: (enabled: boolean) => void
 }
 
-/** 扬声器下方：陌生人检测总开关（仅「移动活体」确认的轨迹计为人脸；观看端可开关，采集端固定关闭且不展示此项） */
+/** 扬声器下方：陌生人检测（仅观看端展示；默认关闭，需手动开启）。采集端不设此项：人脸链路仅在后台开启「陌生人抓拍和警告」时为开。 */
 export function FaceTrackingRadios({ idPrefix, enabled, onChange }: FaceTrackingRadiosProps) {
   const name = `${idPrefix}-face-tracking`
   const legendId = `${idPrefix}-face-tracking-legend`

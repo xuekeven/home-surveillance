@@ -7,6 +7,9 @@ import { FaceAnalysisOverlay } from '../shared/faceAnalysisOverlay'
 import { VideoClockOverlay } from '../shared/VideoClockOverlay'
 import { statusLabel } from '../shared/status'
 import { ROOM_MISSING_MESSAGE } from '../shared/roomJoinMessages'
+import { useFamilyMembers } from '../shared/useFamilyMembers'
+import { useRoomStrangerAlert } from '../shared/useRoomStrangerAlert'
+import { appConfig } from '../config'
 import { useCameraRoom } from './useCameraRoom'
 
 export function CameraPage() {
@@ -24,7 +27,6 @@ export function CameraPage() {
     activeCameraId,
     switchingCamera,
     switchCamera,
-    cameraClockMs,
     restart,
     stop
   } = useCameraRoom(roomId)
@@ -34,6 +36,9 @@ export function CameraPage() {
     selectedDeviceId: selectedSpeakerId,
     setSelectedDeviceId: setSelectedSpeakerId
   } = useSpeakerOutputSelection()
+
+  const strangerFaceAlertOn = useRoomStrangerAlert(appConfig.roomToken, roomId)
+  const familyMembers = useFamilyMembers(appConfig.roomToken, strangerFaceAlertOn)
 
   const hideCameraUi = error === ROOM_MISSING_MESSAGE
 
@@ -55,8 +60,18 @@ export function CameraPage() {
         {!hideCameraUi ? (
           <div className="video-face-stack">
             <video ref={videoRef} className="video" muted playsInline autoPlay />
-            <VideoClockOverlay variant="camera" clockMs={cameraClockMs} />
-            <FaceAnalysisOverlay videoRef={videoRef} active={false} />
+            <VideoClockOverlay variant="camera" active={Boolean(localStream)} />
+            <FaceAnalysisOverlay
+              videoRef={videoRef}
+              active={Boolean(localStream) && strangerFaceAlertOn}
+              showStrangerOverlay={false}
+              familyMembers={familyMembers}
+              faceAlert={{
+                roomId,
+                token: appConfig.roomToken,
+                enabled: strangerFaceAlertOn
+              }}
+            />
           </div>
         ) : null}
 

@@ -144,7 +144,7 @@ export async function adminPatchRoom(
   }
 }
 
-/** 采集端/观看端：当前房间是否在后台开启了陌生人脸告警 */
+/** 采集端：后台是否为该房间开启「陌生人抓拍和警告」（决定是否运行人脸链路）；观看端 UI 不使用此项控制推理开关 */
 export async function fetchRoomStrangerAlertEnabled(roomToken: string, roomId: string): Promise<boolean> {
   const res = await fetch(apiRoomPolicyUrl(roomId), {
     headers: { Authorization: `Bearer ${roomToken}` }

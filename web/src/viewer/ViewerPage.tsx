@@ -44,7 +44,7 @@ export function ViewerPage() {
     setSelectedDeviceId: setSelectedSpeakerId
   } = useSpeakerOutputSelection()
 
-  const [faceTrackingEnabled, setFaceTrackingEnabled] = useState(true)
+  const [faceTrackingEnabled, setFaceTrackingEnabled] = useState(false)
 
   const familyMembers = useFamilyMembers(appConfig.roomToken)
 

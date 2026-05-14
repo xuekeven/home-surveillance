@@ -8,43 +8,45 @@ function formatLocalClock(d: Date): string {
 export type VideoClockOverlayProps =
   | {
       variant: 'camera'
-      /** 与 `camera-room-clock` 同一 Unix 毫秒，未起流或未打点时不显示 */
-      clockMs: number | undefined
+      /** 有本地预览流时在左上角显示采集设备当前时间（本机 wall clock） */
+      active: boolean
     }
   | {
       variant: 'viewer'
       /** 采集端 Unix 时间与本机 Date.now() 的差；未收到首包时为 null */
       skewMs: number | null
+      /** 有远端画面时尝试显示采集端时间 */
       active: boolean
     }
 
 /**
- * 统一展示采集端时钟：采集页用本机打点；观看端用信令 `room-clock` 校准后的推导时间。
+ * 两端视频左上角统一展示「采集端当前时间」：
+ * — 采集页：本机实时时钟；
+ * — 观看页：由信令 `room-clock`（采集端每秒广播）校准后的推导时间。
  */
 export function VideoClockOverlay(props: VideoClockOverlayProps) {
-  const [, setBump] = useState(0)
+  const [, bump] = useState(0)
+  const skewMs = props.variant === 'viewer' ? props.skewMs : null
 
   useEffect(() => {
-    if (props.variant === 'camera') {
-      if (props.clockMs === undefined) {
-        return undefined
-      }
-    } else {
-      if (!props.active || props.skewMs === null) {
-        return undefined
-      }
+    if (!props.active) {
+      return undefined
     }
-    const id = window.setInterval(() => setBump((n) => n + 1), 250)
+    if (props.variant === 'viewer' && skewMs === null) {
+      return undefined
+    }
+
+    const id = window.setInterval(() => bump((x) => x + 1), 250)
     return () => window.clearInterval(id)
-  }, [props])
+  }, [props.variant, props.active, skewMs])
 
   if (props.variant === 'camera') {
-    if (props.clockMs === undefined) {
+    if (!props.active) {
       return null
     }
     return (
       <div className="video-clock-overlay" aria-hidden="true">
-        {formatLocalClock(new Date(props.clockMs))}
+        {formatLocalClock(new Date())}
       </div>
     )
   }

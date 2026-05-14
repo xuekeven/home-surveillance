@@ -61,8 +61,6 @@ export function useCameraRoom(roomId: string) {
   const [cameraDevices, setCameraDevices] = useState<CameraDeviceOption[]>([])
   const [activeCameraId, setActiveCameraId] = useState('')
   const [switchingCamera, setSwitchingCamera] = useState(false)
-  /** 与发往信令 `camera-room-clock` 同一拍，用于左上角时钟 */
-  const [cameraClockMs, setCameraClockMs] = useState<number | undefined>(undefined)
 
   const socketRef = useRef<Socket | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -417,7 +415,6 @@ export function useCameraRoom(roomId: string) {
 
   useEffect(() => {
     if (!localStream || !socketConnected) {
-      setCameraClockMs(undefined)
       return undefined
     }
 
@@ -430,9 +427,7 @@ export function useCameraRoom(roomId: string) {
       if (!socket.connected) {
         return
       }
-      const ts = Date.now()
-      setCameraClockMs(ts)
-      socket.emit('camera-room-clock', { roomId, ts })
+      socket.emit('camera-room-clock', { roomId, ts: Date.now() })
     }
 
     tick()
@@ -464,7 +459,6 @@ export function useCameraRoom(roomId: string) {
     setCameraDevices([])
     setActiveCameraId('')
     setSwitchingCamera(false)
-    setCameraClockMs(undefined)
     setSocketConnected(false)
     setStatus('idle')
   }, [])
@@ -493,7 +487,6 @@ export function useCameraRoom(roomId: string) {
     activeCameraId,
     switchingCamera,
     switchCamera,
-    cameraClockMs,
     restart,
     stop
   }

@@ -697,9 +697,9 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
       render: (url: string) => <UrlWithCopy url={url} />
     },
     {
-      title: '是否开放',
+      title: '是否启用房间',
       dataIndex: 'enabled',
-      width: '9%',
+      width: '12%',
       render: (_: boolean, record) => (
         <Switch checked={record.enabled} onChange={(checked) => void patchRoomEnabled(record.roomId, checked)} />
       )
@@ -716,12 +716,12 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
     },
     {
       title: (
-        <Tooltip title="开启后，采集端/观看端在检测到陌生人脸时可上报推送（须服务端配置企微中转）。与陌生人检测开关无关。">
-          <span>陌生人警告</span>
+        <Tooltip title="开启后：采集端在该房间才会运行人脸检测、抓拍并在配置企微中转时可上报告警；关闭则采集端仅采集与 WebRTC。观看端仍只受本页「陌生人检测」控制，与此项无关。">
+          <span>陌生人抓拍和警告</span>
         </Tooltip>
       ),
       dataIndex: 'strangerFaceAlert',
-      width: '10%',
+      width: '12%',
       render: (_: boolean, record) => (
         <Switch
           checked={record.strangerFaceAlert}
@@ -751,11 +751,11 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
       <div className="family-face-panel admin-panel-block">
         <h2 className="family-face-heading">房间管理</h2>
         <p className="muted family-face-desc">
-          「是否开放」设为「是」的房间，采集端与观看端才能信令加入；未添加的房间一律视为未启用。
+          「是否启用房间」设为「是」的房间，采集端与观看端才能信令加入；未添加的房间一律视为未启用。
           <br />
           「最多查看端」为同时允许的观看端数量。
           <br />
-          「陌生人警告」按房间配置：开启后，两端在做陌生人检测且识别为陌生人时才会调用告警接口。
+          「陌生人抓拍和警告」按房间配置：开启后采集端在该房间才会运行人脸抓拍与告警；观看端仍仅在本页「陌生人检测」打开且远端有画面时做人脸推理。
         </p>
 
         <div className="admin-section-toolbar">
@@ -808,7 +808,7 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
             >
               <Input maxLength={50} placeholder="请输入" autoComplete="off" />
             </Form.Item>
-            <Form.Item name="allowConnect" label="是否开放">
+            <Form.Item name="allowConnect" label="是否启用房间">
               <Radio.Group>
                 <Radio value={true}>是</Radio>
                 <Radio value={false}>否</Radio>
@@ -831,7 +831,7 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
             >
               <InputNumber min={1} max={99} precision={0} style={{ width: '100%' }} placeholder="不含采集端" />
             </Form.Item>
-            <Form.Item name="strangerFaceAlert" label="陌生人警告">
+            <Form.Item name="strangerFaceAlert" label="陌生人抓拍和警告">
               <Radio.Group>
                 <Radio value={true}>开启</Radio>
                 <Radio value={false}>关闭</Radio>
@@ -859,7 +859,7 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
               <Form.Item label="房间 ID">
                 <Input value={editingRoomId} disabled />
               </Form.Item>
-              <Form.Item name="allowConnect" label="是否开放">
+              <Form.Item name="allowConnect" label="是否启用房间">
                 <Radio.Group>
                   <Radio value={true}>是</Radio>
                   <Radio value={false}>否</Radio>
@@ -882,7 +882,7 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
               >
                 <InputNumber min={1} max={99} precision={0} style={{ width: '100%' }} placeholder="不含采集端" />
               </Form.Item>
-              <Form.Item name="strangerFaceAlert" label="陌生人警告">
+              <Form.Item name="strangerFaceAlert" label="陌生人抓拍和警告">
                 <Radio.Group>
                   <Radio value={true}>开启</Radio>
                   <Radio value={false}>关闭</Radio>
