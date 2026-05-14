@@ -54,3 +54,9 @@ export interface SwitchFailedPayload {
   viewerSocketId: string
   message: string
 }
+
+/** 采集端广播房间时钟（Unix 毫秒），由信令转给观看端 */
+export interface CameraRoomClockPayload {
+  roomId: string
+  ts: number
+}

@@ -1,15 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { applyAudioSinkToMedia, useSpeakerOutputSelection } from '../shared/audioSink'
 import { CameraDeviceToolbar } from '../shared/cameraDeviceToolbar'
 import { SpeakerOutputToolbar } from '../shared/speakerOutputToolbar'
 import { FaceAnalysisOverlay } from '../shared/faceAnalysisOverlay'
-import { FaceTrackingRadios } from '../shared/faceTrackingRadios'
+import { VideoClockOverlay } from '../shared/VideoClockOverlay'
 import { statusLabel } from '../shared/status'
 import { ROOM_MISSING_MESSAGE } from '../shared/roomJoinMessages'
-import { useFamilyMembers } from '../shared/useFamilyMembers'
-import { useRoomStrangerAlert } from '../shared/useRoomStrangerAlert'
-import { appConfig } from '../config'
 import { useCameraRoom } from './useCameraRoom'
 
 export function CameraPage() {
@@ -27,6 +24,7 @@ export function CameraPage() {
     activeCameraId,
     switchingCamera,
     switchCamera,
+    cameraClockMs,
     restart,
     stop
   } = useCameraRoom(roomId)
@@ -36,11 +34,6 @@ export function CameraPage() {
     selectedDeviceId: selectedSpeakerId,
     setSelectedDeviceId: setSelectedSpeakerId
   } = useSpeakerOutputSelection()
-
-  const [faceTrackingEnabled, setFaceTrackingEnabled] = useState(true)
-
-  const familyMembers = useFamilyMembers(appConfig.roomToken)
-  const strangerFaceAlertOn = useRoomStrangerAlert(appConfig.roomToken, roomId)
 
   const hideCameraUi = error === ROOM_MISSING_MESSAGE
 
@@ -62,16 +55,8 @@ export function CameraPage() {
         {!hideCameraUi ? (
           <div className="video-face-stack">
             <video ref={videoRef} className="video" muted playsInline autoPlay />
-            <FaceAnalysisOverlay
-              videoRef={videoRef}
-              active={Boolean(localStream) && faceTrackingEnabled}
-              familyMembers={familyMembers}
-              faceAlert={{
-                roomId,
-                token: appConfig.roomToken,
-                enabled: faceTrackingEnabled && Boolean(localStream) && strangerFaceAlertOn
-              }}
-            />
+            <VideoClockOverlay variant="camera" clockMs={cameraClockMs} />
+            <FaceAnalysisOverlay videoRef={videoRef} active={false} />
           </div>
         ) : null}
 
@@ -102,12 +87,6 @@ export function CameraPage() {
                 devices={speakerDevices}
                 selectedDeviceId={selectedSpeakerId}
                 onSelectDevice={setSelectedSpeakerId}
-              />
-
-              <FaceTrackingRadios
-                idPrefix="camera"
-                enabled={faceTrackingEnabled}
-                onChange={setFaceTrackingEnabled}
               />
 
             </div>

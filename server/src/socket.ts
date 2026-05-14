@@ -15,6 +15,7 @@ import {
 } from './rooms.js'
 import type {
   CameraCatalogPayload,
+  CameraRoomClockPayload,
   JoinRoomPayload,
   SignalPayload,
   SwitchCameraPayload,
@@ -104,6 +105,33 @@ function isSignalPayload(payload: unknown): payload is SignalPayload {
     candidate.to.length > 0 &&
     'signal' in candidate
   )
+}
+
+function isCameraRoomClockPayload(payload: unknown): payload is CameraRoomClockPayload {
+  if (!payload || typeof payload !== 'object') {
+    return false
+  }
+
+  const candidate = payload as Partial<CameraRoomClockPayload>
+  return (
+    typeof candidate.roomId === 'string' &&
+    isValidRoomId(candidate.roomId) &&
+    typeof candidate.ts === 'number' &&
+    Number.isFinite(candidate.ts)
+  )
+}
+
+function handleCameraRoomClock(socket: Socket, payload: unknown): void {
+  if (!isCameraRoomClockPayload(payload)) {
+    return
+  }
+
+  const client = getClient(socket.id)
+  if (!client || client.role !== 'camera' || client.roomId !== payload.roomId) {
+    return
+  }
+
+  socket.to(payload.roomId).emit('room-clock', { ts: payload.ts })
 }
 
 async function handleJoinRoom(io: Server, socket: Socket, payload: unknown): Promise<void> {
@@ -274,6 +302,7 @@ export function registerSocketHandlers(io: Server): void {
     socket.on('camera-catalog', (payload) => handleCameraCatalog(io, socket, payload))
     socket.on('switch-camera', (payload) => handleSwitchCamera(io, socket, payload))
     socket.on('camera-switch-failed', (payload) => handleCameraSwitchFailed(io, socket, payload))
+    socket.on('camera-room-clock', (payload) => handleCameraRoomClock(socket, payload))
     socket.on('disconnect', () => handleDisconnect(io, socket))
   })
 }

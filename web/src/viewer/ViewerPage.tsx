@@ -5,6 +5,7 @@ import { CameraDeviceToolbar } from '../shared/cameraDeviceToolbar'
 import { SpeakerOutputToolbar } from '../shared/speakerOutputToolbar'
 import { FaceAnalysisOverlay } from '../shared/faceAnalysisOverlay'
 import { FaceTrackingRadios } from '../shared/faceTrackingRadios'
+import { VideoClockOverlay } from '../shared/VideoClockOverlay'
 import { statusLabel } from '../shared/status'
 import { ROOM_MISSING_MESSAGE } from '../shared/roomJoinMessages'
 import { useFamilyMembers } from '../shared/useFamilyMembers'
@@ -30,6 +31,7 @@ export function ViewerPage() {
     activeCameraId,
     switchingCamera,
     switchRemoteCamera,
+    cameraClockSkewMs,
     restart,
     stop
   } = useViewerRoom(roomId)
@@ -83,6 +85,11 @@ export function ViewerPage() {
                 autoPlay
                 controls
                 muted={false}
+              />
+              <VideoClockOverlay
+                variant="viewer"
+                active={Boolean(remoteStream)}
+                skewMs={cameraClockSkewMs}
               />
               <FaceAnalysisOverlay
                 videoRef={videoRef}

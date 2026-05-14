@@ -182,6 +182,7 @@ type FaceAnalysisOverlayProps = {
  * MediaPipe 检出人脸框后，仅当轨迹判定为「移动活体」(motionLive) 时才视为「人脸」。
  * face-api 比对与陌生人告警、抓拍仅在「近似正面」姿态下进行；侧脸、仰视、俯视不参与比对且不作为陌生人告警依据。
  * 企微告警：陌生人须连续满 STRANGER_CONFIRM_HOLD_MS 才计入人数；抓拍仍按当前帧陌生人瞬时计数（另有 STRANGER_SCREENSHOT_DEBOUNCE_MS）。
+ * 叠加层仅对「陌生人」绘制红框与编号标签；家庭成员与识别中 / 非正面等状态不画框。
  */
 export function FaceAnalysisOverlay({
   videoRef,
@@ -266,7 +267,6 @@ export function FaceAnalysisOverlay({
       ctx.font = 'bold 13px system-ui, sans-serif'
       ctx.lineWidth = 3
 
-      const membersNonEmpty = familyMembersRef.current.length > 0
       const identities = trackIdentityRef.current
 
       const strangersForRank = confirmedFaces.filter(
@@ -278,23 +278,12 @@ export function FaceAnalysisOverlay({
 
       for (const face of confirmedFaces) {
         const ident = identities.get(face.id)
-        let stroke: string
-        let text: string
-        if (!ident) {
-          stroke = '#c9b038'
-          text = membersNonEmpty ? '识别中…' : '姿态检测中…'
-        } else if (ident.kind === 'non_frontal') {
-          stroke = '#7d92ae'
-          text = '非正面 · 未比对'
-        } else if (ident.kind === 'family') {
-          stroke = '#5cb894'
-          text = `家庭成员 · ${ident.memberLabel.trim()}`
-        } else {
-          stroke = '#d97676'
-          text = `陌生人${strangerRank.get(face.id) ?? 1}`
+        if (ident?.kind !== 'stranger') {
+          continue
         }
 
-        ctx.strokeStyle = stroke
+        ctx.strokeStyle = '#d97676'
+        const text = `陌生人${strangerRank.get(face.id) ?? 1}`
         const { x, y, w, h } = mapBoxToOverlay(face.box, rect, vw, vh)
         ctx.strokeRect(x, y, w, h)
 
@@ -506,7 +495,7 @@ export function FaceAnalysisOverlay({
         console.warn('[FaceAnalysisOverlay] init failed:', detail)
         if (!cancelled) {
           setInitError(
-            '人脸检测引擎加载失败。手机常见原因：① 网络无法访问模型地址（Google Storage）或 WASM（jsDelivr）；② 微信等内置浏览器限制 WebAssembly。请用系统 Safari/Chrome 打开本站，或换网络/Wi‑Fi 重试。'
+            '陌生人检测引擎加载失败。手机常见原因：① 网络无法访问模型地址（Google Storage）或 WASM（jsDelivr）；② 微信等内置浏览器限制 WebAssembly。请用系统 Safari/Chrome 打开本站，或换网络/Wi‑Fi 重试。'
           )
         }
         detector = null

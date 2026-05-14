@@ -4,8 +4,8 @@ import { fetchRoomStrangerAlertEnabled } from './familyMembersApi'
 const POLL_MS = 45_000
 
 /**
- * 从服务端读取当前房间的「陌生人警告」开关（与后台房间策略同源）。
- * 采集端做人脸检测时请照常开启；是否上报告警由此开关决定。
+ * 从服务端读取当前房间的「陌生人警告」开关（与后台 `strangerFaceAlert` 同源）。
+ * 需在客户端开启人脸检测并上报时，再结合 `FaceAnalysisOverlay.faceAlert.enabled` 使用。
  */
 export function useRoomStrangerAlert(roomToken: string, roomId: string): boolean {
   const [enabled, setEnabled] = useState(false)

@@ -362,6 +362,23 @@ h2 {
   z-index: 1;
 }
 
+.video-clock-overlay {
+  position: absolute;
+  top: 0.5rem;
+  left: 0.5rem;
+  z-index: 2;
+  padding: 0.25rem 0.5rem;
+  border-radius: 0.4rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--hs-video-clock-fg, rgba(255, 255, 255, 0.95));
+  background: var(--hs-video-clock-bg, rgba(0, 0, 0, 0.52));
+  pointer-events: none;
+  user-select: none;
+}
+
 .face-engine-hint {
   position: absolute;
   bottom: 0.5rem;

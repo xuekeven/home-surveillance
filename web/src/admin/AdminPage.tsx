@@ -716,7 +716,7 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
     },
     {
       title: (
-        <Tooltip title="开启后，采集端/观看端在检测到陌生人脸时可上报推送（须服务端配置企微中转）。与人脸检测开关无关。">
+        <Tooltip title="开启后，采集端/观看端在检测到陌生人脸时可上报推送（须服务端配置企微中转）。与陌生人检测开关无关。">
           <span>陌生人警告</span>
         </Tooltip>
       ),
@@ -755,7 +755,7 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
           <br />
           「最多查看端」为同时允许的观看端数量。
           <br />
-          「陌生人警告」按房间配置：开启后，两端在做人脸检测且识别为陌生人时才会调用告警接口。
+          「陌生人警告」按房间配置：开启后，两端在做陌生人检测且识别为陌生人时才会调用告警接口。
         </p>
 
         <div className="admin-section-toolbar">

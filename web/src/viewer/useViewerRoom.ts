@@ -42,6 +42,10 @@ interface CameraSwitchFailedMessage {
   message: string
 }
 
+interface RoomClockMessage {
+  ts: number
+}
+
 export function useViewerRoom(roomId: string) {
   const [status, setStatus] = useState<ConnectionStatus>('idle')
   const [error, setError] = useState<string>()
@@ -67,6 +71,9 @@ export function useViewerRoom(roomId: string) {
 
   const [dialogMicOn, setDialogMicOn] = useState(false)
   const [pushMicHeld, setPushMicHeld] = useState(false)
+
+  /** 采集端时间 − 本机 Date.now()，用于推导与采集端一致的显示时间 */
+  const [cameraClockSkewMs, setCameraClockSkewMs] = useState<number | null>(null)
 
   useEffect(() => {
     micDesiredRef.current = dialogMicOn || pushMicHeld
@@ -273,6 +280,7 @@ export function useViewerRoom(roomId: string) {
 
       socket.on('camera-left', () => {
         setCameraOnline(false)
+        setCameraClockSkewMs(null)
         destroyPeer()
         setCameraDevices([])
         setActiveCameraId('')
@@ -283,6 +291,12 @@ export function useViewerRoom(roomId: string) {
       socket.on('room-error', ({ message }: RoomErrorMessage) => {
         setError(message)
         setStatus('error')
+      })
+
+      socket.on('room-clock', ({ ts }: RoomClockMessage) => {
+        if (typeof ts === 'number' && Number.isFinite(ts)) {
+          setCameraClockSkewMs(ts - Date.now())
+        }
       })
     } catch (startError) {
       setError(startError instanceof Error ? startError.message : '观看端启动失败')
@@ -328,6 +342,7 @@ export function useViewerRoom(roomId: string) {
     setSocketConnected(false)
     setCameraOnline(false)
     setViewerCount(0)
+    setCameraClockSkewMs(null)
     setStatus('idle')
   }, [destroyPeer])
 
@@ -359,6 +374,7 @@ export function useViewerRoom(roomId: string) {
     activeCameraId,
     switchingCamera,
     switchRemoteCamera,
+    cameraClockSkewMs,
     restart,
     stop
   }
