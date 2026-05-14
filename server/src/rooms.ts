@@ -104,6 +104,7 @@ export function toPublicRoomState(roomId: string): PublicRoomState {
   return {
     roomId,
     hasCamera: Boolean(room?.cameraSocketId),
-    viewerCount: room?.viewers.size ?? 0
+    viewerCount: room?.viewers.size ?? 0,
+    viewerSocketIds: room ? [...room.viewers] : []
   }
 }

@@ -1,9 +1,9 @@
-import { useEffect, useRef } from 'react'
+import { Suspense, useEffect, useRef } from 'react'
 import { useParams } from 'react-router-dom'
 import { applyAudioSinkToMedia, useSpeakerOutputSelection } from '../shared/audioSink'
 import { CameraDeviceToolbar } from '../shared/cameraDeviceToolbar'
 import { SpeakerOutputToolbar } from '../shared/speakerOutputToolbar'
-import { FaceAnalysisOverlay } from '../shared/faceAnalysisOverlay'
+import { FaceAnalysisOverlayLazy } from '../shared/faceAnalysisOverlayLazy'
 import { VideoClockOverlay } from '../shared/VideoClockOverlay'
 import { statusLabel } from '../shared/status'
 import { ROOM_MISSING_MESSAGE } from '../shared/roomJoinMessages'
@@ -61,17 +61,21 @@ export function CameraPage() {
           <div className="video-face-stack">
             <video ref={videoRef} className="video" muted playsInline autoPlay />
             <VideoClockOverlay variant="camera" active={Boolean(localStream)} />
-            <FaceAnalysisOverlay
-              videoRef={videoRef}
-              active={Boolean(localStream) && strangerFaceAlertOn}
-              showStrangerOverlay={false}
-              familyMembers={familyMembers}
-              faceAlert={{
-                roomId,
-                token: appConfig.roomToken,
-                enabled: strangerFaceAlertOn
-              }}
-            />
+            {Boolean(localStream) && strangerFaceAlertOn ? (
+              <Suspense fallback={null}>
+                <FaceAnalysisOverlayLazy
+                  videoRef={videoRef}
+                  active
+                  showStrangerOverlay={false}
+                  familyMembers={familyMembers}
+                  faceAlert={{
+                    roomId,
+                    token: appConfig.roomToken,
+                    enabled: strangerFaceAlertOn
+                  }}
+                />
+              </Suspense>
+            ) : null}
           </div>
         ) : null}
 

@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { Suspense, useEffect, useRef, useState } from 'react'
 import { useParams } from 'react-router-dom'
 import { applyAudioSinkToMedia, useSpeakerOutputSelection } from '../shared/audioSink'
 import { CameraDeviceToolbar } from '../shared/cameraDeviceToolbar'
 import { SpeakerOutputToolbar } from '../shared/speakerOutputToolbar'
-import { FaceAnalysisOverlay } from '../shared/faceAnalysisOverlay'
+import { FaceAnalysisOverlayLazy } from '../shared/faceAnalysisOverlayLazy'
 import { FaceTrackingRadios } from '../shared/faceTrackingRadios'
 import { VideoClockOverlay } from '../shared/VideoClockOverlay'
 import { statusLabel } from '../shared/status'
@@ -91,11 +91,15 @@ export function ViewerPage() {
                 active={Boolean(remoteStream)}
                 skewMs={cameraClockSkewMs}
               />
-              <FaceAnalysisOverlay
-                videoRef={videoRef}
-                active={Boolean(remoteStream) && faceTrackingEnabled}
-                familyMembers={familyMembers}
-              />
+              {Boolean(remoteStream) && faceTrackingEnabled ? (
+                <Suspense fallback={null}>
+                  <FaceAnalysisOverlayLazy
+                    videoRef={videoRef}
+                    active
+                    familyMembers={familyMembers}
+                  />
+                </Suspense>
+              ) : null}
             </div>
 
             <div className="grid">

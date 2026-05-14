@@ -51,6 +51,12 @@ interface ViewerSwitchCameraMessage {
   viewerSocketId: string
 }
 
+interface RoomStateFromServer {
+  hasCamera: boolean
+  viewerCount: number
+  viewerSocketIds?: string[]
+}
+
 export function useCameraRoom(roomId: string) {
   const [status, setStatus] = useState<ConnectionStatus>('idle')
   const [error, setError] = useState<string>()
@@ -170,13 +176,12 @@ export function useCameraRoom(roomId: string) {
       })
 
       peer.on('close', () => {
-        updateViewer(viewerSocketId, { status: 'disconnected' })
-        peersRef.current.delete(viewerSocketId)
+        destroyPeer(viewerSocketId)
       })
 
       peer.on('error', (peerError) => {
         if (isBenignPeerTeardownError(peerError)) {
-          updateViewer(viewerSocketId, { status: 'disconnected' })
+          destroyPeer(viewerSocketId)
           return
         }
         updateViewer(viewerSocketId, { status: 'error' })
@@ -185,6 +190,18 @@ export function useCameraRoom(roomId: string) {
     },
     [destroyPeer, roomId, updateViewer]
   )
+
+  /** 丢弃服务端已不认作在线的 viewer，并拆掉对应 Peer（不包含新增，仍靠 viewer-joined） */
+  const reconcileViewersFromServer = useCallback((viewerSocketIds: string[]) => {
+    const allow = new Set(viewerSocketIds)
+    setViewers((current) => current.filter((v) => allow.has(v.socketId)))
+    for (const id of [...peersRef.current.keys()]) {
+      if (!allow.has(id)) {
+        destroyPeer(id)
+      }
+    }
+  }, [destroyPeer])
+
 
   const switchCamera = useCallback(
     async (deviceId: string, options?: { viewerSocketId?: string }) => {
@@ -336,7 +353,11 @@ export function useCameraRoom(roomId: string) {
         })
       })
 
-      socket.on('room-state', () => {
+      socket.on('room-state', (state: RoomStateFromServer) => {
+        if (Array.isArray(state.viewerSocketIds)) {
+          reconcileViewersFromServer(state.viewerSocketIds)
+        }
+
         if (roomCaptureStartedRef.current) {
           return
         }
@@ -395,7 +416,7 @@ export function useCameraRoom(roomId: string) {
       setError(startError instanceof Error ? startError.message : '采集端启动失败')
       setStatus('error')
     }
-  }, [createPeerForViewer, destroyPeer, refreshCameraCatalog, roomId])
+  }, [createPeerForViewer, destroyPeer, reconcileViewersFromServer, refreshCameraCatalog, roomId])
 
   useEffect(() => {
     if (!localStream) {

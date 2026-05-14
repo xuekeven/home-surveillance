@@ -32,6 +32,8 @@ export interface PublicRoomState {
   roomId: string
   hasCamera: boolean
   viewerCount: number
+  /** 当前房间内观看端 socket id（与信令服务端 Set 一致） */
+  viewerSocketIds: string[]
 }
 
 export interface CameraDeviceOptionPayload {

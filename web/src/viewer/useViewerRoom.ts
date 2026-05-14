@@ -31,6 +31,7 @@ interface RoomErrorMessage {
 interface RoomStateMessage {
   hasCamera: boolean
   viewerCount: number
+  viewerSocketIds?: string[]
 }
 
 interface CameraCatalogMessage {
