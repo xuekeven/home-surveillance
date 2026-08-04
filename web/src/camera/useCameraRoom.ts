@@ -9,6 +9,7 @@ import {
 } from '../shared/socket'
 import type { ConnectionStatus } from '../shared/status'
 import type { CameraDeviceOption } from '../shared/cameraDeviceToolbar'
+import { readDeviceTemperatureC } from '../shared/deviceTemperature'
 import {
   assertWebRtcSupport,
   boostOutgoingVideoEncodingForPeers,
@@ -73,6 +74,7 @@ export function useCameraRoom(roomId: string) {
   const [cameraDevices, setCameraDevices] = useState<CameraDeviceOption[]>([])
   const [activeCameraId, setActiveCameraId] = useState('')
   const [switchingCamera, setSwitchingCamera] = useState(false)
+  const [deviceTemperatureC, setDeviceTemperatureC] = useState<number | null>()
 
   const socketRef = useRef<Socket | null>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -84,6 +86,16 @@ export function useCameraRoom(roomId: string) {
   const roomCaptureStartedRef = useRef(false)
   const statsTimersRef = useRef<Map<string, number>>(new Map())
   const statsSnapshotsRef = useRef<Map<string, WebRtcStatsSnapshot>>(new Map())
+
+  const publishDeviceTemperature = useCallback(async () => {
+    const temperatureC = await readDeviceTemperatureC()
+    setDeviceTemperatureC(temperatureC)
+
+    const socket = socketRef.current
+    if (socket?.connected) {
+      socket.emit('camera-telemetry', { roomId, temperatureC })
+    }
+  }, [roomId])
 
   const refreshCameraCatalog = useCallback(
     async (stream: MediaStream) => {
@@ -406,6 +418,7 @@ export function useCameraRoom(roomId: string) {
         clearHandshakeWatchdog()
         setSocketConnected(true)
         setStatus('joining-room')
+        void publishDeviceTemperature()
         socket.emit('join-room', {
           roomId,
           role: 'camera',
@@ -466,6 +479,7 @@ export function useCameraRoom(roomId: string) {
       })
 
       socket.on('viewer-joined', ({ viewerSocketId }: ViewerJoinedMessage) => {
+        void publishDeviceTemperature()
         const s = streamRef.current
         if (s) {
           createPeerForViewer(viewerSocketId)
@@ -495,7 +509,20 @@ export function useCameraRoom(roomId: string) {
       setError(startError instanceof Error ? startError.message : '采集端启动失败')
       setStatus('error')
     }
-  }, [createPeerForViewer, destroyPeer, mergeServerViewerList, refreshCameraCatalog, roomId])
+  }, [
+    createPeerForViewer,
+    destroyPeer,
+    mergeServerViewerList,
+    publishDeviceTemperature,
+    refreshCameraCatalog,
+    roomId
+  ])
+
+  useEffect(() => {
+    void publishDeviceTemperature()
+    const id = window.setInterval(() => void publishDeviceTemperature(), 15_000)
+    return () => window.clearInterval(id)
+  }, [publishDeviceTemperature])
 
   useEffect(() => {
     if (!localStream) {
@@ -620,6 +647,7 @@ export function useCameraRoom(roomId: string) {
     cameraDevices,
     activeCameraId,
     switchingCamera,
+    deviceTemperatureC,
     switchCamera,
     restart,
     stop

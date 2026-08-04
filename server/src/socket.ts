@@ -17,6 +17,7 @@ import type {
   ClientState,
   CameraCatalogPayload,
   CameraRoomClockPayload,
+  CameraTelemetryPayload,
   JoinRoomPayload,
   SignalPayload,
   SwitchCameraPayload,
@@ -148,6 +149,37 @@ function handleCameraRoomClock(socket: Socket, payload: unknown): void {
   }
 
   socket.to(payload.roomId).emit('room-clock', { ts: payload.ts })
+}
+
+function isCameraTelemetryPayload(payload: unknown): payload is CameraTelemetryPayload {
+  if (!payload || typeof payload !== 'object') {
+    return false
+  }
+
+  const candidate = payload as Partial<CameraTelemetryPayload>
+  const temperatureValid =
+    candidate.temperatureC === null ||
+    (typeof candidate.temperatureC === 'number' &&
+      Number.isFinite(candidate.temperatureC) &&
+      candidate.temperatureC >= -50 &&
+      candidate.temperatureC <= 150)
+
+  return isValidRoomId(candidate.roomId) && temperatureValid
+}
+
+function handleCameraTelemetry(socket: Socket, payload: unknown): void {
+  if (!isCameraTelemetryPayload(payload)) {
+    return
+  }
+
+  const client = getClient(socket.id)
+  if (!client || client.role !== 'camera' || client.roomId !== payload.roomId) {
+    return
+  }
+
+  socket.to(payload.roomId).emit('camera-telemetry', {
+    temperatureC: payload.temperatureC
+  })
 }
 
 async function handleJoinRoom(io: Server, socket: Socket, payload: unknown): Promise<void> {
@@ -358,6 +390,7 @@ export function registerSocketHandlers(io: Server): void {
     socket.on('switch-camera', (payload) => handleSwitchCamera(io, socket, payload))
     socket.on('camera-switch-failed', (payload) => handleCameraSwitchFailed(io, socket, payload))
     socket.on('camera-room-clock', (payload) => handleCameraRoomClock(socket, payload))
+    socket.on('camera-telemetry', (payload) => handleCameraTelemetry(socket, payload))
     socket.on('disconnect', () => handleDisconnect(io, socket))
   })
 }

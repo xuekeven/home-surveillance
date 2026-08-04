@@ -75,9 +75,9 @@ function diagnose(stats: WebRtcLinkStats | undefined): { label: string; tone: st
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="webrtc-metric">
-      <dt>{label}</dt>
-      <dd>{value}</dd>
+    <div className="status-item webrtc-metric">
+      <span>{label}</span>
+      <strong>{value}</strong>
     </div>
   )
 }
@@ -108,7 +108,7 @@ export function WebRtcStatsPanel({
         {title ? <h3>{title}</h3> : <span />}
         <span className={`webrtc-health ${health.tone}`}>{health.label}</span>
       </div>
-      <dl className="webrtc-metrics">
+      <div className="grid webrtc-metrics">
         {capture ? (
           <Metric
             label="本地采集"
@@ -133,7 +133,7 @@ export function WebRtcStatsPanel({
           <Metric label="画质限制" value={qualityLimitationLabel(stats.qualityLimitationReason)} />
         ) : null}
         {stats?.implementation ? <Metric label="编解码实现" value={stats.implementation} /> : null}
-      </dl>
+      </div>
     </div>
   )
 }

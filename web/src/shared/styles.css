@@ -471,6 +471,10 @@ h2 {
   margin-top: 1rem;
 }
 
+.viewer-device-controls {
+  margin-bottom: 1rem;
+}
+
 .device-controls-block .camera-switch:last-child {
   margin-bottom: 0;
 }
@@ -647,33 +651,11 @@ h2 {
 }
 
 .webrtc-metrics {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(145px, 1fr));
-  gap: 0;
   margin: 0;
-  border-top: 1px solid var(--hs-line);
-  border-left: 1px solid var(--hs-line);
 }
 
 .webrtc-metric {
   min-width: 0;
-  padding: 0.65rem 0.75rem;
-  border-right: 1px solid var(--hs-line);
-  border-bottom: 1px solid var(--hs-line);
-}
-
-.webrtc-metric dt {
-  margin: 0 0 0.25rem;
-  color: var(--hs-muted);
-  font-size: 0.76rem;
-}
-
-.webrtc-metric dd {
-  margin: 0;
-  overflow-wrap: anywhere;
-  color: var(--hs-text);
-  font-size: 0.9rem;
-  font-weight: 700;
 }
 
 .alert {

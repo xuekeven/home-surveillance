@@ -6,6 +6,7 @@ import { SpeakerOutputToolbar } from '../shared/speakerOutputToolbar'
 import { FaceAnalysisOverlayLazy } from '../shared/faceAnalysisOverlayLazy'
 import { VideoClockOverlay } from '../shared/VideoClockOverlay'
 import { statusLabel } from '../shared/status'
+import { formatDeviceTemperature } from '../shared/deviceTemperature'
 import { ROOM_MISSING_MESSAGE } from '../shared/roomJoinMessages'
 import { useFamilyMembers } from '../shared/useFamilyMembers'
 import { useRoomStrangerAlert } from '../shared/useRoomStrangerAlert'
@@ -27,6 +28,7 @@ export function CameraPage() {
     cameraDevices,
     activeCameraId,
     switchingCamera,
+    deviceTemperatureC,
     switchCamera,
     restart,
     stop
@@ -87,6 +89,7 @@ export function CameraPage() {
               <StatusItem label="页面安全上下文" value={isSecureContext ? '是' : '否'} />
               <StatusItem label="信令连接" value={socketConnected ? '已连接' : '未连接'} />
               <StatusItem label="采集端状态" value={statusLabel(status)} />
+              <StatusItem label="采集端温度" value={formatDeviceTemperature(deviceTemperatureC)} />
               <StatusItem label="正在观看" value={`${viewers.length}`} />
               <StatusItem
                 label="麦克风"

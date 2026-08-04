@@ -62,3 +62,9 @@ export interface CameraRoomClockPayload {
   roomId: string
   ts: number
 }
+
+/** 采集端设备温度；null 表示当前浏览器无法读取。 */
+export interface CameraTelemetryPayload {
+  roomId: string
+  temperatureC: number | null
+}

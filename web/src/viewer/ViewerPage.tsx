@@ -7,6 +7,7 @@ import { FaceAnalysisOverlayLazy } from '../shared/faceAnalysisOverlayLazy'
 import { FaceTrackingRadios } from '../shared/faceTrackingRadios'
 import { VideoClockOverlay } from '../shared/VideoClockOverlay'
 import { statusLabel } from '../shared/status'
+import { formatDeviceTemperature } from '../shared/deviceTemperature'
 import { ROOM_MISSING_MESSAGE } from '../shared/roomJoinMessages'
 import { useFamilyMembers } from '../shared/useFamilyMembers'
 import { WebRtcStatsPanel } from '../shared/WebRtcStatsPanel'
@@ -25,6 +26,7 @@ export function ViewerPage() {
     viewerCount,
     candidateType,
     linkStats,
+    cameraTemperatureC,
     dialogMicOn,
     setDialogMicOn,
     pushMicHeld,
@@ -79,6 +81,30 @@ export function ViewerPage() {
 
         {!roomMissing ? (
           <>
+            <div className="device-controls-block viewer-device-controls">
+              <CameraDeviceToolbar
+                idPrefix="viewer"
+                label="采集摄像头"
+                devices={cameraDevices}
+                activeCameraId={activeCameraId}
+                switchingCamera={switchingCamera}
+                onSelectDevice={(deviceId) => switchRemoteCamera(deviceId)}
+              />
+
+              <SpeakerOutputToolbar
+                idPrefix="viewer"
+                devices={speakerDevices}
+                selectedDeviceId={selectedSpeakerId}
+                onSelectDevice={setSelectedSpeakerId}
+              />
+
+              <FaceTrackingRadios
+                idPrefix="viewer"
+                enabled={faceTrackingEnabled}
+                onChange={setFaceTrackingEnabled}
+              />
+            </div>
+
             <div className="video-face-stack">
               <video
                 ref={videoRef}
@@ -108,6 +134,7 @@ export function ViewerPage() {
               <StatusItem label="信令连接" value={socketConnected ? '已连接' : '未连接'} />
               <StatusItem label="采集端在线" value={cameraOnline ? '是' : '否'} />
               <StatusItem label="观看端状态" value={statusLabel(status)} />
+              <StatusItem label="采集端温度" value={formatDeviceTemperature(cameraTemperatureC)} />
               <StatusItem label="正在观看" value={`${viewerCount}`} />
               <StatusItem label="ICE 候选路径" value={candidateType || '未知'} />
               <StatusItem
@@ -117,31 +144,6 @@ export function ViewerPage() {
             </div>
 
             <WebRtcStatsPanel title="视频接收链路" stats={linkStats} />
-
-            <div className="device-controls-block">
-              <CameraDeviceToolbar
-                idPrefix="viewer"
-                label="采集摄像头"
-                devices={cameraDevices}
-                activeCameraId={activeCameraId}
-                switchingCamera={switchingCamera}
-                onSelectDevice={(deviceId) => switchRemoteCamera(deviceId)}
-              />
-
-              <SpeakerOutputToolbar
-                idPrefix="viewer"
-                devices={speakerDevices}
-                selectedDeviceId={selectedSpeakerId}
-                onSelectDevice={setSelectedSpeakerId}
-              />
-
-              <FaceTrackingRadios
-                idPrefix="viewer"
-                enabled={faceTrackingEnabled}
-                onChange={setFaceTrackingEnabled}
-              />
-
-            </div>
 
             <div className="viewer-voice">
               <button

@@ -42,7 +42,8 @@ export default defineConfig({
   resolve: {
     alias: {
       events: 'events/',
-      buffer: 'buffer/'
+      buffer: 'buffer/',
+      util: 'util/'
     }
   },
   plugins: [react()],

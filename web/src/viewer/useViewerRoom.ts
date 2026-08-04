@@ -52,6 +52,10 @@ interface RoomClockMessage {
   ts: number
 }
 
+interface CameraTelemetryMessage {
+  temperatureC: number | null
+}
+
 export function useViewerRoom(roomId: string) {
   const [status, setStatus] = useState<ConnectionStatus>('idle')
   const [error, setError] = useState<string>()
@@ -61,6 +65,7 @@ export function useViewerRoom(roomId: string) {
   const [viewerCount, setViewerCount] = useState(0)
   const [candidateType, setCandidateType] = useState<string>()
   const [linkStats, setLinkStats] = useState<WebRtcLinkStats>()
+  const [cameraTemperatureC, setCameraTemperatureC] = useState<number | null>()
 
   const [cameraDevices, setCameraDevices] = useState<CameraDeviceOption[]>([])
   const [activeCameraId, setActiveCameraId] = useState('')
@@ -326,6 +331,7 @@ export function useViewerRoom(roomId: string) {
 
       socket.on('camera-left', () => {
         setCameraOnline(false)
+        setCameraTemperatureC(undefined)
         setCameraClockSkewMs(null)
         destroyPeer()
         setCameraDevices([])
@@ -342,6 +348,18 @@ export function useViewerRoom(roomId: string) {
       socket.on('room-clock', ({ ts }: RoomClockMessage) => {
         if (typeof ts === 'number' && Number.isFinite(ts)) {
           setCameraClockSkewMs(ts - Date.now())
+        }
+      })
+
+      socket.on('camera-telemetry', ({ temperatureC }: CameraTelemetryMessage) => {
+        if (
+          temperatureC === null ||
+          (typeof temperatureC === 'number' &&
+            Number.isFinite(temperatureC) &&
+            temperatureC >= -50 &&
+            temperatureC <= 150)
+        ) {
+          setCameraTemperatureC(temperatureC)
         }
       })
     } catch (startError) {
@@ -388,6 +406,7 @@ export function useViewerRoom(roomId: string) {
     setSocketConnected(false)
     setCameraOnline(false)
     setViewerCount(0)
+    setCameraTemperatureC(undefined)
     setCameraClockSkewMs(null)
     setStatus('idle')
   }, [destroyPeer])
@@ -413,6 +432,7 @@ export function useViewerRoom(roomId: string) {
     viewerCount,
     candidateType,
     linkStats,
+    cameraTemperatureC,
     dialogMicOn,
     setDialogMicOn,
     pushMicHeld,
