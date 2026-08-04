@@ -91,7 +91,11 @@ export function absoluteRoomEntryUrls(roomId: string): {
   publicViewer: string
   internalViewer: string
 } {
-  const currentOrigin = typeof window === 'undefined' ? '' : window.location.origin
+  // 完整 URL 需要保留协议；location.host 提供当前页面的主机名和端口。
+  const currentOrigin =
+    typeof window === 'undefined'
+      ? ''
+      : `${window.location.protocol}//${window.location.host}`
   const resolvedPublicOrigin = publicOrigin ?? currentOrigin
   const resolvedInternalOrigin = internalOrigin ?? currentOrigin
   const cameraPath = cameraRoomPath(roomId)

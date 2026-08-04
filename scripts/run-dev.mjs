@@ -20,14 +20,6 @@ if (!fs.existsSync(envPath)) {
 
 dotenv.config({ path: envPath })
 
-const merged = {
-  ...process.env,
-  VITE_PUBLIC_ORIGIN:
-    process.env.VITE_PUBLIC_ORIGIN || process.env.FACE_ALERT_ORIGIN_SECONDARY || '',
-  VITE_INTERNAL_ORIGIN:
-    process.env.VITE_INTERNAL_ORIGIN || process.env.FACE_ALERT_ORIGIN_PRIMARY || ''
-}
-
 const defaultCmd =
   'pnpm exec concurrently "pnpm --filter @home-surveillance/server dev" "pnpm --filter @home-surveillance/web dev"'
 const shellCmd =
@@ -35,7 +27,7 @@ const shellCmd =
 
 const child = spawn(shellCmd, {
   cwd: root,
-  env: merged,
+  env: process.env,
   shell: true,
   stdio: 'inherit'
 })

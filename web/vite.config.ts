@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { defineConfig } from 'vite'
+import { defineConfig, type Plugin } from 'vite'
 import react from '@vitejs/plugin-react'
 
 /** 与 Express 开发端口一致（根目录 `.env` 中 `PORT`，未设时默认 3000） */
@@ -32,6 +32,38 @@ function devProxyTargets(backend: string): Record<
 
 const viteDir = path.dirname(fileURLToPath(import.meta.url))
 
+/** Vite 默认只打印站点根地址；补充可直接打开的后台管理地址。 */
+function printAdminUrls(): Plugin {
+  return {
+    name: 'home-surveillance:print-admin-urls',
+    configureServer(server) {
+      server.httpServer?.once('listening', () => {
+        setTimeout(() => {
+          const resolvedUrls = server.resolvedUrls
+          if (!resolvedUrls) {
+            return
+          }
+
+          const localAdminUrls = resolvedUrls.local.map((url) =>
+            new URL('admin', url).href
+          )
+          const networkAdminUrls = resolvedUrls.network.map((url) =>
+            new URL('admin', url).href
+          )
+
+          server.config.logger.info('')
+          for (const url of localAdminUrls) {
+            server.config.logger.info(`  ➜  Admin:  ${url}`)
+          }
+          for (const url of networkAdminUrls) {
+            server.config.logger.info(`  ➜  Admin:  ${url}`)
+          }
+        }, 0)
+      })
+    }
+  }
+}
+
 export default defineConfig({
   /** 从 monorepo 根目录读取 `.env`，与 Express/Room token 同源 */
   envDir: path.resolve(viteDir, '..'),
@@ -46,7 +78,7 @@ export default defineConfig({
       util: 'util/'
     }
   },
-  plugins: [react()],
+  plugins: [react(), printAdminUrls()],
   optimizeDeps: {
     include: ['face-api.js']
   },

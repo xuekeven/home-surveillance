@@ -31,11 +31,7 @@ const webEnv = {
     process.env.VITE_PUBLIC_BASE_PATH ?? process.env.PUBLIC_BASE_PATH ?? '/surveillance',
   VITE_ROOM_TOKEN: process.env.VITE_ROOM_TOKEN ?? process.env.ROOM_TOKEN ?? '',
   VITE_ICE_SERVERS_JSON:
-    process.env.VITE_ICE_SERVERS_JSON ?? process.env.ICE_SERVERS_JSON ?? defaultIce,
-  VITE_PUBLIC_ORIGIN:
-    process.env.VITE_PUBLIC_ORIGIN || process.env.FACE_ALERT_ORIGIN_SECONDARY || '',
-  VITE_INTERNAL_ORIGIN:
-    process.env.VITE_INTERNAL_ORIGIN || process.env.FACE_ALERT_ORIGIN_PRIMARY || ''
+    process.env.VITE_ICE_SERVERS_JSON ?? process.env.ICE_SERVERS_JSON ?? defaultIce
 }
 
 let code = spawnSync('pnpm', ['--filter', '@home-surveillance/web', 'build'], {

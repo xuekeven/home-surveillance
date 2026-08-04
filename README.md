@@ -203,7 +203,7 @@ VITE_INTERNAL_ORIGIN=https://homeserver.example.ts.net
 - `ROOM_TOKEN` 与 `VITE_ROOM_TOKEN` 必须一致。
 - `ICE_SERVERS_JSON` 与 `VITE_ICE_SERVERS_JSON` 应保持一致。
 - `VITE_PUBLIC_ORIGIN` 填阿里云公网 HTTPS Origin，`VITE_INTERNAL_ORIGIN` 填家庭云 Tailscale HTTPS Origin；后台用它们生成四种房间入口地址。
-- 两个入口变量未设置时，`pnpm dev` 和 `pnpm build:prod` 会分别回退到 `FACE_ALERT_ORIGIN_SECONDARY`（公网）与 `FACE_ALERT_ORIGIN_PRIMARY`（内网）。
+- `VITE_PUBLIC_ORIGIN` 或 `VITE_INTERNAL_ORIGIN` 留空时，对应入口使用当前后台页面的 Origin（`location.protocol + '//' + location.host`）。
 - `ALLOWED_ORIGINS` 只填写浏览器 Origin，即“协议 + 域名 + 可选端口”，不要带 `/surveillance` 路径。
 - `VITE_*` 会写入前端构建产物，修改后必须重新执行 `pnpm build:prod`。固定的 TURN 凭据和 `VITE_ROOM_TOKEN` 对私有 MVP 可用，但公网长期运行应升级为服务端签发的短期凭据和 token。
 
@@ -369,8 +369,8 @@ https://www.example.com/surveillance/socket.io/
 | `VITE_PUBLIC_BASE_PATH` | 前端资源路径和 Router basename，须与服务端前缀一致 |
 | `VITE_ROOM_TOKEN` | 构建到前端的房间口令，须与 `ROOM_TOKEN` 一致 |
 | `VITE_ICE_SERVERS_JSON` | 前端构建期 STUN/TURN 兜底配置 |
-| `VITE_PUBLIC_ORIGIN` | 后台“公网采集端 / 公网查看端”链接使用的 Origin，不带部署子路径 |
-| `VITE_INTERNAL_ORIGIN` | 后台“内网采集端 / 内网查看端”链接使用的 Tailscale HTTPS Origin，不带部署子路径 |
+| `VITE_PUBLIC_ORIGIN` | 后台“公网采集端 / 公网查看端”链接使用的 Origin；留空则使用当前后台页面 Origin |
+| `VITE_INTERNAL_ORIGIN` | 后台“内网采集端 / 内网查看端”链接使用的 Origin；留空则使用当前后台页面 Origin |
 | `VITE_SOCKET_URL` | 可选；页面和信令不同源时指定 Socket.IO 服务地址 |
 | `VITE_SOCKET_PATH` | 可选；覆盖默认的 `{VITE_PUBLIC_BASE_PATH}/socket.io/` 路径 |
 
