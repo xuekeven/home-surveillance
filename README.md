@@ -123,14 +123,14 @@ WebRTC 视频：
 
 ## 开发配置
 
-项目使用仓库根目录的 `.env` 作为单一配置来源，该文件已被 Git 忽略。服务端启动时读取它，`npm run dev` 会把它传给 server 和 Vite，`npm run build:prod` 会在构建时把对应值注入前端。配置模板见 [.env.example](.env.example)。
+项目使用仓库根目录的 `.env` 作为单一配置来源，该文件已被 Git 忽略。服务端启动时读取它，`pnpm dev` 会把它传给 server 和 Vite，`pnpm build:prod` 会在构建时把对应值注入前端。配置模板见 [.env.example](.env.example)。
 
 建议使用 Node.js 20 LTS 或更新的 LTS 版本。首次启动：
 
 ```bash
 cp .env.example .env
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 本地开发可使用以下配置：
@@ -203,30 +203,30 @@ VITE_INTERNAL_ORIGIN=https://homeserver.example.ts.net
 - `ROOM_TOKEN` 与 `VITE_ROOM_TOKEN` 必须一致。
 - `ICE_SERVERS_JSON` 与 `VITE_ICE_SERVERS_JSON` 应保持一致。
 - `VITE_PUBLIC_ORIGIN` 填阿里云公网 HTTPS Origin，`VITE_INTERNAL_ORIGIN` 填家庭云 Tailscale HTTPS Origin；后台用它们生成四种房间入口地址。
-- 两个入口变量未设置时，`npm run dev` 和 `npm run build:prod` 会分别回退到 `FACE_ALERT_ORIGIN_SECONDARY`（公网）与 `FACE_ALERT_ORIGIN_PRIMARY`（内网）。
+- 两个入口变量未设置时，`pnpm dev` 和 `pnpm build:prod` 会分别回退到 `FACE_ALERT_ORIGIN_SECONDARY`（公网）与 `FACE_ALERT_ORIGIN_PRIMARY`（内网）。
 - `ALLOWED_ORIGINS` 只填写浏览器 Origin，即“协议 + 域名 + 可选端口”，不要带 `/surveillance` 路径。
-- `VITE_*` 会写入前端构建产物，修改后必须重新执行 `npm run build:prod`。固定的 TURN 凭据和 `VITE_ROOM_TOKEN` 对私有 MVP 可用，但公网长期运行应升级为服务端签发的短期凭据和 token。
+- `VITE_*` 会写入前端构建产物，修改后必须重新执行 `pnpm build:prod`。固定的 TURN 凭据和 `VITE_ROOM_TOKEN` 对私有 MVP 可用，但公网长期运行应升级为服务端签发的短期凭据和 token。
 
-`npm run build:prod` 在未显式配置 `VITE_*` 时会尝试从对应的非 `VITE_` 变量推导；生产环境仍建议像上例一样显式设置，避免前后端路径或口令不一致。可用 `openssl rand -hex 32` 分别生成 `ROOM_TOKEN` 和 `ADMIN_TOKEN`。
+`pnpm build:prod` 在未显式配置 `VITE_*` 时会尝试从对应的非 `VITE_` 变量推导；生产环境仍建议像上例一样显式设置，避免前后端路径或口令不一致。可用 `openssl rand -hex 32` 分别生成 `ROOM_TOKEN` 和 `ADMIN_TOKEN`。
 
 ### 2. 构建并用 PM2 启动
 
 ```bash
-npm install
-npm run typecheck
-npm run build:prod
-npx pm2 start ecosystem.config.cjs
-npx pm2 save
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm build:prod
+pnpm dlx pm2 start ecosystem.config.cjs
+pnpm dlx pm2 save
 ```
 
 [ecosystem.config.cjs](ecosystem.config.cjs) 只定义进程入口和工作目录，不保存密钥。生产进程运行 `server/dist/index.js`，并由服务端托管 `web/dist`。更新代码后重新构建，再执行：
 
 ```bash
-npx pm2 restart home-surveillance
-npx pm2 logs home-surveillance
+pnpm dlx pm2 restart home-surveillance
+pnpm dlx pm2 logs home-surveillance
 ```
 
-如需开机启动，执行 `npx pm2 startup`，按其输出完成系统配置后再次执行 `npx pm2 save`。
+如需开机启动，执行 `pnpm dlx pm2 startup`，按其输出完成系统配置后再次执行 `pnpm dlx pm2 save`。
 
 ### 3. 配置 Tailscale HTTPS
 

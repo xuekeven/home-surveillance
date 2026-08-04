@@ -2,6 +2,7 @@ node_modules/
 dist/
 .env
 npm-debug.log*
+pnpm-debug.log*
 *.tsbuildinfo
 .DS_Store
 server/data/*.json

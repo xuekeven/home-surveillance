@@ -38,7 +38,7 @@ const webEnv = {
     process.env.VITE_INTERNAL_ORIGIN || process.env.FACE_ALERT_ORIGIN_PRIMARY || ''
 }
 
-let code = spawnSync('npm', ['run', 'build', '-w', 'web'], {
+let code = spawnSync('pnpm', ['--filter', '@home-surveillance/web', 'build'], {
   cwd: root,
   env: webEnv,
   stdio: 'inherit'
@@ -47,7 +47,7 @@ if (code !== 0) {
   process.exit(code ?? 1)
 }
 
-code = spawnSync('npm', ['run', 'build', '-w', 'server'], {
+code = spawnSync('pnpm', ['--filter', '@home-surveillance/server', 'build'], {
   cwd: root,
   env: process.env,
   stdio: 'inherit'

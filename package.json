@@ -10,16 +10,17 @@
   ],
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.33.0",
   "workspaces": [
     "server",
     "web"
   ],
   "scripts": {
     "dev": "node scripts/run-dev.mjs",
-    "build": "npm run build -w web && npm run build -w server",
+    "build": "pnpm --filter @home-surveillance/web build && pnpm --filter @home-surveillance/server build",
     "build:prod": "node scripts/build-prod.mjs",
-    "typecheck": "npm run typecheck -w server && npm run typecheck -w web",
-    "start": "npm run start -w server"
+    "typecheck": "pnpm --filter @home-surveillance/server typecheck && pnpm --filter @home-surveillance/web typecheck",
+    "start": "pnpm --filter @home-surveillance/server start"
   },
   "devDependencies": {
     "concurrently": "9.2.1",
