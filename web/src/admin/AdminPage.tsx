@@ -502,8 +502,10 @@ function isFormValidateFailed(e: unknown): boolean {
 type RoomTableRow = {
   key: string
   roomId: string
-  cameraUrl: string
-  viewerUrl: string
+  publicCameraUrl: string
+  internalCameraUrl: string
+  publicViewerUrl: string
+  internalViewerUrl: string
   enabled: boolean
   strangerFaceAlert: boolean
   maxViewersPerRoom: number
@@ -660,8 +662,10 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
       return {
         key: roomId,
         roomId,
-        cameraUrl: urls.camera,
-        viewerUrl: urls.viewer,
+        publicCameraUrl: urls.publicCamera,
+        internalCameraUrl: urls.internalCamera,
+        publicViewerUrl: urls.publicViewer,
+        internalViewerUrl: urls.internalViewer,
         enabled: policy.enabled === true,
         strangerFaceAlert: policy.strangerFaceAlert === true,
         maxViewersPerRoom:
@@ -675,7 +679,7 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
     {
       title: '房间 ID',
       dataIndex: 'roomId',
-      width: '9%',
+      width: 90,
       render: (id: string) => (
         <span className="admin-room-id-wrap">
           <Tooltip title={id}>
@@ -685,21 +689,33 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
       )
     },
     {
-      title: '采集端地址',
-      dataIndex: 'cameraUrl',
-      width: '27%',
+      title: '公网采集端',
+      dataIndex: 'publicCameraUrl',
+      width: 175,
       render: (url: string) => <UrlWithCopy url={url} />
     },
     {
-      title: '查看端地址',
-      dataIndex: 'viewerUrl',
-      width: '27%',
+      title: '内网采集端',
+      dataIndex: 'internalCameraUrl',
+      width: 175,
+      render: (url: string) => <UrlWithCopy url={url} />
+    },
+    {
+      title: '公网查看端',
+      dataIndex: 'publicViewerUrl',
+      width: 175,
+      render: (url: string) => <UrlWithCopy url={url} />
+    },
+    {
+      title: '内网查看端',
+      dataIndex: 'internalViewerUrl',
+      width: 175,
       render: (url: string) => <UrlWithCopy url={url} />
     },
     {
       title: '是否启用房间',
       dataIndex: 'enabled',
-      width: '12%',
+      width: 120,
       render: (_: boolean, record) => (
         <Switch checked={record.enabled} onChange={(checked) => void patchRoomEnabled(record.roomId, checked)} />
       )
@@ -711,7 +727,7 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
         </Tooltip>
       ),
       dataIndex: 'maxViewersPerRoom',
-      width: '9%',
+      width: 100,
       render: (n: number) => <Typography.Text>{n}</Typography.Text>
     },
     {
@@ -721,7 +737,7 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
         </Tooltip>
       ),
       dataIndex: 'strangerFaceAlert',
-      width: '12%',
+      width: 160,
       render: (_: boolean, record) => (
         <Switch
           checked={record.strangerFaceAlert}
@@ -732,7 +748,7 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
     {
       title: '操作',
       key: 'actions',
-      width: '9%',
+      width: 100,
       render: (_: unknown, record) => (
         <Space size="small">
           <Button type="link" size="small" onClick={() => openEdit(record)}>
@@ -773,6 +789,7 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
               columns={columns}
               dataSource={dataSource}
               tableLayout="fixed"
+              scroll={{ x: 1270 }}
             />
           </div>
         ) : null}

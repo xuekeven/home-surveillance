@@ -9,6 +9,7 @@ import { statusLabel } from '../shared/status'
 import { ROOM_MISSING_MESSAGE } from '../shared/roomJoinMessages'
 import { useFamilyMembers } from '../shared/useFamilyMembers'
 import { useRoomStrangerAlert } from '../shared/useRoomStrangerAlert'
+import { WebRtcStatsPanel } from '../shared/WebRtcStatsPanel'
 import { appConfig } from '../config'
 import { useCameraRoom } from './useCameraRoom'
 
@@ -38,9 +39,10 @@ export function CameraPage() {
   } = useSpeakerOutputSelection()
 
   const strangerFaceAlertOn = useRoomStrangerAlert(appConfig.roomToken, roomId)
-  const familyMembers = useFamilyMembers(appConfig.roomToken, strangerFaceAlertOn)
+  const familyMembersState = useFamilyMembers(appConfig.roomToken, strangerFaceAlertOn)
 
   const hideCameraUi = error === ROOM_MISSING_MESSAGE
+  const captureSettings = localStream?.getVideoTracks()[0]?.getSettings()
 
   useEffect(() => {
     if (videoRef.current && localStream) {
@@ -61,13 +63,13 @@ export function CameraPage() {
           <div className="video-face-stack">
             <video ref={videoRef} className="video" muted playsInline autoPlay />
             <VideoClockOverlay variant="camera" active={Boolean(localStream)} />
-            {Boolean(localStream) && strangerFaceAlertOn ? (
+            {Boolean(localStream) && strangerFaceAlertOn && familyMembersState.ready ? (
               <Suspense fallback={null}>
                 <FaceAnalysisOverlayLazy
                   videoRef={videoRef}
                   active
                   showStrangerOverlay={false}
-                  familyMembers={familyMembers}
+                  familyMembers={familyMembersState.members}
                   faceAlert={{
                     roomId,
                     token: appConfig.roomToken,
@@ -126,13 +128,24 @@ export function CameraPage() {
           ) : (
             <ul className="list">
               {viewers.map((viewer) => (
-                <li key={viewer.socketId}>
-                  <span>{viewer.socketId}</span>
-                  <strong>{statusLabel(viewer.status)}</strong>
-                  {viewerInboundAudio[viewer.socketId] ? (
-                    <em className="viewer-return-audio">对讲上行</em>
-                  ) : null}
-                  {viewer.candidateType ? <em>{viewer.candidateType}</em> : null}
+                <li key={viewer.socketId} className="viewer-link-item">
+                  <div className="viewer-link-summary">
+                    <span>{viewer.socketId}</span>
+                    <strong>{statusLabel(viewer.status)}</strong>
+                    {viewerInboundAudio[viewer.socketId] ? (
+                      <em className="viewer-return-audio">对讲上行</em>
+                    ) : null}
+                    {viewer.candidateType ? <em>{viewer.candidateType}</em> : null}
+                  </div>
+                  <WebRtcStatsPanel
+                    title="视频发送链路"
+                    stats={viewer.linkStats}
+                    capture={{
+                      width: captureSettings?.width,
+                      height: captureSettings?.height,
+                      frameRate: captureSettings?.frameRate
+                    }}
+                  />
                 </li>
               ))}
             </ul>

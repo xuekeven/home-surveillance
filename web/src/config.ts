@@ -20,6 +20,23 @@ function normalizeBasePath(value: string | undefined): string {
     : withLeadingSlash
 }
 
+function normalizeOrigin(value: string | undefined): string | undefined {
+  const trimmed = value?.trim()
+  if (!trimmed) {
+    return undefined
+  }
+
+  try {
+    const url = new URL(trimmed)
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+      return undefined
+    }
+    return url.origin
+  } catch {
+    return undefined
+  }
+}
+
 function parseIceServers(value: string | undefined): IceServer[] {
   if (!value) {
     return DEFAULT_ICE_SERVERS
@@ -38,6 +55,8 @@ function parseIceServers(value: string | undefined): IceServer[] {
 }
 
 const publicBasePath = normalizeBasePath(import.meta.env.VITE_PUBLIC_BASE_PATH)
+const internalOrigin = normalizeOrigin(import.meta.env.VITE_INTERNAL_ORIGIN)
+const publicOrigin = normalizeOrigin(import.meta.env.VITE_PUBLIC_ORIGIN)
 
 function defaultSocketPath(): string {
   return publicBasePath ? `${publicBasePath}/socket.io/` : '/socket.io/'
@@ -45,6 +64,8 @@ function defaultSocketPath(): string {
 
 export const appConfig = {
   publicBasePath,
+  internalOrigin,
+  publicOrigin,
   socketUrl: import.meta.env.VITE_SOCKET_URL || undefined,
   socketPath: import.meta.env.VITE_SOCKET_PATH || defaultSocketPath(),
   roomToken: import.meta.env.VITE_ROOM_TOKEN || 'change-me',
@@ -63,15 +84,24 @@ export function viewerRoomPath(roomId: string): string {
   return publicBasePath ? `${publicBasePath}${seg}` : seg
 }
 
-/** 当前站点下的完整采集端 / 观看端 URL（用于后台展示） */
-export function absoluteRoomEntryUrls(roomId: string): { camera: string; viewer: string } {
-  if (typeof window === 'undefined') {
-    return { camera: '', viewer: '' }
-  }
-  const origin = window.location.origin
+/** 公网与内网的完整采集端 / 观看端 URL（用于后台展示） */
+export function absoluteRoomEntryUrls(roomId: string): {
+  publicCamera: string
+  internalCamera: string
+  publicViewer: string
+  internalViewer: string
+} {
+  const currentOrigin = typeof window === 'undefined' ? '' : window.location.origin
+  const resolvedPublicOrigin = publicOrigin ?? currentOrigin
+  const resolvedInternalOrigin = internalOrigin ?? currentOrigin
+  const cameraPath = cameraRoomPath(roomId)
+  const viewerPath = viewerRoomPath(roomId)
+
   return {
-    camera: `${origin}${cameraRoomPath(roomId)}`,
-    viewer: `${origin}${viewerRoomPath(roomId)}`
+    publicCamera: `${resolvedPublicOrigin}${cameraPath}`,
+    internalCamera: `${resolvedInternalOrigin}${cameraPath}`,
+    publicViewer: `${resolvedPublicOrigin}${viewerPath}`,
+    internalViewer: `${resolvedInternalOrigin}${viewerPath}`
   }
 }
 

@@ -14,6 +14,7 @@ import {
   toPublicRoomState
 } from './rooms.js'
 import type {
+  ClientState,
   CameraCatalogPayload,
   CameraRoomClockPayload,
   JoinRoomPayload,
@@ -37,6 +38,21 @@ function emitRoomState(io: Server, roomId: string): void {
 
 function sendRoomError(socket: Socket, message: string): void {
   socket.emit('room-error', { message })
+}
+
+function notifyClientLeft(io: Server, socketId: string, client: ClientState): void {
+  if (client.role === 'viewer') {
+    const cameraSocketId = getRoom(client.roomId)?.cameraSocketId
+    if (cameraSocketId) {
+      io.to(cameraSocketId).emit('viewer-left', { viewerSocketId: socketId })
+    }
+  } else {
+    for (const viewerSocketId of listViewers(client.roomId)) {
+      io.to(viewerSocketId).emit('camera-left')
+    }
+  }
+
+  emitRoomState(io, client.roomId)
 }
 
 function isJoinRoomPayload(payload: unknown): payload is JoinRoomPayload {
@@ -155,8 +171,42 @@ async function handleJoinRoom(io: Server, socket: Socket, payload: unknown): Pro
   }
 
   const existingClient = getClient(socket.id)
+  if (existingClient?.roomId === payload.roomId && existingClient.role === payload.role) {
+    socket.emit('room-state', toPublicRoomState(payload.roomId))
+    return
+  }
+
+  if (payload.role === 'camera') {
+    const cameraSocketId = getRoom(payload.roomId)?.cameraSocketId
+    if (cameraSocketId && cameraSocketId !== socket.id) {
+      sendRoomError(socket, '该房间已有采集端在线')
+      return
+    }
+  }
+
+  let maxViewers = config.maxViewersPerRoom
+  if (payload.role === 'viewer') {
+    const policy = await getRoomPolicy(payload.roomId)
+    maxViewers = policy?.maxViewersPerRoom ?? config.maxViewersPerRoom
+    const targetRoom = getRoom(payload.roomId)
+    const alreadyViewer = targetRoom?.viewers.has(socket.id) === true
+    if (!alreadyViewer && (targetRoom?.viewers.size ?? 0) >= maxViewers) {
+      sendRoomError(socket, `该房间最多允许 ${maxViewers} 个观看端`)
+      return
+    }
+  }
+
+  if (!socket.connected) {
+    return
+  }
+
   if (existingClient) {
     removeClient(socket.id)
+    await socket.leave(existingClient.roomId)
+    notifyClientLeft(io, socket.id, existingClient)
+    if (!socket.connected) {
+      return
+    }
   }
 
   if (payload.role === 'camera') {
@@ -177,8 +227,6 @@ async function handleJoinRoom(io: Server, socket: Socket, payload: unknown): Pro
     return
   }
 
-  const policy = await getRoomPolicy(payload.roomId)
-  const maxViewers = policy?.maxViewersPerRoom ?? config.maxViewersPerRoom
   const result = joinViewer(payload.roomId, socket.id, maxViewers)
   if (!result.ok) {
     sendRoomError(socket, result.reason)
@@ -248,6 +296,11 @@ function handleCameraSwitchFailed(io: Server, socket: Socket, payload: unknown):
     return
   }
 
+  const viewer = getClient(payload.viewerSocketId)
+  if (!viewer || viewer.role !== 'viewer' || viewer.roomId !== client.roomId) {
+    return
+  }
+
   io.to(payload.viewerSocketId).emit('camera-switch-failed', {
     message: payload.message
   })
@@ -265,6 +318,12 @@ function handleSignal(io: Server, socket: Socket, payload: unknown): void {
     return
   }
 
+  const recipient = getClient(payload.to)
+  if (!recipient || recipient.roomId !== client.roomId || recipient.role === client.role) {
+    sendRoomError(socket, '信令接收方不在当前房间或角色无效')
+    return
+  }
+
   io.to(payload.to).emit('signal', {
     from: socket.id,
     signal: payload.signal
@@ -277,26 +336,22 @@ function handleDisconnect(io: Server, socket: Socket): void {
     return
   }
 
-  if (client.role === 'viewer') {
-    const cameraSocketId = getRoom(client.roomId)?.cameraSocketId
-    if (cameraSocketId) {
-      io.to(cameraSocketId).emit('viewer-left', { viewerSocketId: socket.id })
-    }
-  }
-
-  if (client.role === 'camera') {
-    for (const viewerSocketId of listViewers(client.roomId)) {
-      io.to(viewerSocketId).emit('camera-left')
-    }
-  }
-
-  emitRoomState(io, client.roomId)
+  notifyClientLeft(io, socket.id, client)
 }
+
+let joinQueue: Promise<void> = Promise.resolve()
 
 export function registerSocketHandlers(io: Server): void {
   io.on('connection', (socket) => {
     socket.on('join-room', (payload) => {
-      void handleJoinRoom(io, socket, payload)
+      joinQueue = joinQueue
+        .then(() => handleJoinRoom(io, socket, payload))
+        .catch((error) => {
+          console.error('[socket] join-room failed:', error)
+          if (socket.connected) {
+            sendRoomError(socket, '加入房间失败，请稍后重试')
+          }
+        })
     })
     socket.on('signal', (payload) => handleSignal(io, socket, payload))
     socket.on('camera-catalog', (payload) => handleCameraCatalog(io, socket, payload))

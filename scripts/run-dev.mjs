@@ -20,7 +20,13 @@ if (!fs.existsSync(envPath)) {
 
 dotenv.config({ path: envPath })
 
-const merged = { ...process.env }
+const merged = {
+  ...process.env,
+  VITE_PUBLIC_ORIGIN:
+    process.env.VITE_PUBLIC_ORIGIN || process.env.FACE_ALERT_ORIGIN_SECONDARY || '',
+  VITE_INTERNAL_ORIGIN:
+    process.env.VITE_INTERNAL_ORIGIN || process.env.FACE_ALERT_ORIGIN_PRIMARY || ''
+}
 
 const defaultCmd =
   'npx concurrently "npm run dev -w server" "npm run dev -w web"'

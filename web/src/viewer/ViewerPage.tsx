@@ -9,6 +9,7 @@ import { VideoClockOverlay } from '../shared/VideoClockOverlay'
 import { statusLabel } from '../shared/status'
 import { ROOM_MISSING_MESSAGE } from '../shared/roomJoinMessages'
 import { useFamilyMembers } from '../shared/useFamilyMembers'
+import { WebRtcStatsPanel } from '../shared/WebRtcStatsPanel'
 import { appConfig } from '../config'
 import { useViewerRoom } from './useViewerRoom'
 
@@ -23,6 +24,7 @@ export function ViewerPage() {
     cameraOnline,
     viewerCount,
     candidateType,
+    linkStats,
     dialogMicOn,
     setDialogMicOn,
     pushMicHeld,
@@ -46,7 +48,7 @@ export function ViewerPage() {
 
   const [faceTrackingEnabled, setFaceTrackingEnabled] = useState(false)
 
-  const familyMembers = useFamilyMembers(appConfig.roomToken)
+  const familyMembersState = useFamilyMembers(appConfig.roomToken, faceTrackingEnabled)
 
   const roomMissing = error === ROOM_MISSING_MESSAGE
 
@@ -91,12 +93,12 @@ export function ViewerPage() {
                 active={Boolean(remoteStream)}
                 skewMs={cameraClockSkewMs}
               />
-              {Boolean(remoteStream) && faceTrackingEnabled ? (
+              {Boolean(remoteStream) && faceTrackingEnabled && familyMembersState.ready ? (
                 <Suspense fallback={null}>
                   <FaceAnalysisOverlayLazy
                     videoRef={videoRef}
                     active
-                    familyMembers={familyMembers}
+                    familyMembers={familyMembersState.members}
                   />
                 </Suspense>
               ) : null}
@@ -113,6 +115,8 @@ export function ViewerPage() {
                 value={dialogMicOn || pushMicHeld ? '开启' : '关闭'}
               />
             </div>
+
+            <WebRtcStatsPanel title="视频接收链路" stats={linkStats} />
 
             <div className="device-controls-block">
               <CameraDeviceToolbar

@@ -22,11 +22,17 @@ import {
   replaceOutgoingVideoTrackForPeers,
   type PeerInstance
 } from '../shared/rtc'
+import {
+  sampleWebRtcLinkStats,
+  type WebRtcLinkStats,
+  type WebRtcStatsSnapshot
+} from '../shared/webrtcStats'
 
 interface ViewerInfo {
   socketId: string
   status: ConnectionStatus
   candidateType?: string
+  linkStats?: WebRtcLinkStats
 }
 
 interface SignalMessage {
@@ -76,6 +82,8 @@ export function useCameraRoom(roomId: string) {
   const [viewerInboundAudio, setViewerInboundAudio] = useState<Record<string, MediaStream>>({})
   const pendingViewersRef = useRef<string[]>([])
   const roomCaptureStartedRef = useRef(false)
+  const statsTimersRef = useRef<Map<string, number>>(new Map())
+  const statsSnapshotsRef = useRef<Map<string, WebRtcStatsSnapshot>>(new Map())
 
   const refreshCameraCatalog = useCallback(
     async (stream: MediaStream) => {
@@ -118,11 +126,54 @@ export function useCameraRoom(roomId: string) {
     })
   }, [])
 
+  const stopViewerStats = useCallback((viewerSocketId: string) => {
+    const timer = statsTimersRef.current.get(viewerSocketId)
+    if (timer !== undefined) {
+      window.clearInterval(timer)
+      statsTimersRef.current.delete(viewerSocketId)
+    }
+    statsSnapshotsRef.current.delete(viewerSocketId)
+  }, [])
+
+  const startViewerStats = useCallback(
+    (viewerSocketId: string, peer: PeerInstance) => {
+      stopViewerStats(viewerSocketId)
+
+      const sample = async () => {
+        if (peersRef.current.get(viewerSocketId) !== peer || peer.destroyed) {
+          return
+        }
+        try {
+          const result = await sampleWebRtcLinkStats(
+            peer,
+            'outbound',
+            statsSnapshotsRef.current.get(viewerSocketId)
+          )
+          if (!result || peersRef.current.get(viewerSocketId) !== peer) {
+            return
+          }
+          statsSnapshotsRef.current.set(viewerSocketId, result.snapshot)
+          updateViewer(viewerSocketId, { linkStats: result.stats })
+        } catch {
+          // Keep the media connection alive if a browser temporarily rejects getStats().
+        }
+      }
+
+      void sample()
+      statsTimersRef.current.set(
+        viewerSocketId,
+        window.setInterval(() => void sample(), 2000)
+      )
+    },
+    [stopViewerStats, updateViewer]
+  )
+
   const destroyPeer = useCallback((viewerSocketId: string) => {
     const peer = peersRef.current.get(viewerSocketId)
+    peersRef.current.delete(viewerSocketId)
+    stopViewerStats(viewerSocketId)
     if (peer) {
       peer.destroy()
-      peersRef.current.delete(viewerSocketId)
     }
 
     setViewerInboundAudio((prev) => {
@@ -135,7 +186,7 @@ export function useCameraRoom(roomId: string) {
     })
 
     setViewers((current) => current.filter((viewer) => viewer.socketId !== viewerSocketId))
-  }, [])
+  }, [stopViewerStats])
 
   const createPeerForViewer = useCallback(
     (viewerSocketId: string) => {
@@ -167,6 +218,7 @@ export function useCameraRoom(roomId: string) {
 
       peer.on('connect', () => {
         updateViewer(viewerSocketId, { status: 'connected' })
+        startViewerStats(viewerSocketId, peer)
         void detectSelectedCandidateType(peer).then((candidateType) => {
           if (candidateType) {
             updateViewer(viewerSocketId, { candidateType })
@@ -188,7 +240,7 @@ export function useCameraRoom(roomId: string) {
         setError(peerError.message)
       })
     },
-    [destroyPeer, roomId, updateViewer]
+    [destroyPeer, roomId, startViewerStats, updateViewer]
   )
 
   /** 丢弃服务端已不认作在线的 viewer，并拆掉对应 Peer */
@@ -328,10 +380,9 @@ export function useCameraRoom(roomId: string) {
       }
 
       const denyMediaAndPeers = () => {
-        for (const peer of peersRef.current.values()) {
-          peer.destroy()
+        for (const viewerSocketId of [...peersRef.current.keys()]) {
+          destroyPeer(viewerSocketId)
         }
-        peersRef.current.clear()
         streamRef.current?.getTracks().forEach((track) => track.stop())
         streamRef.current = null
         setLocalStream(undefined)
@@ -525,10 +576,9 @@ export function useCameraRoom(roomId: string) {
       socketHandshakeWatchdogRef.current = null
     }
 
-    for (const peer of peersRef.current.values()) {
-      peer.destroy()
+    for (const viewerSocketId of [...peersRef.current.keys()]) {
+      destroyPeer(viewerSocketId)
     }
-    peersRef.current.clear()
 
     socketRef.current?.disconnect()
     socketRef.current = null
@@ -545,7 +595,7 @@ export function useCameraRoom(roomId: string) {
     setSwitchingCamera(false)
     setSocketConnected(false)
     setStatus('idle')
-  }, [])
+  }, [destroyPeer])
 
   const restart = useCallback(() => {
     stop()

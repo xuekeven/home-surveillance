@@ -1,7 +1,7 @@
-import fs from 'node:fs/promises'
 import path from 'node:path'
 import { config } from '../config.js'
 import { DATA_DIR } from './dir.js'
+import { createMutationQueue, readTextFileIfExists, writeJsonAtomic } from './fileStore.js'
 
 /** 持久化字段；旧数据可能仅有 enabled */
 type StoredRoomPolicy = {
@@ -40,22 +40,23 @@ function parseStoredMaxViewers(raw: unknown): number | undefined {
 }
 
 const FILE = path.join(DATA_DIR, 'room-policies.json')
+const enqueueMutation = createMutationQueue()
 
 async function readPayload(): Promise<Payload> {
-  try {
-    const raw = await fs.readFile(FILE, 'utf8')
-    const data = JSON.parse(raw) as Payload
-    if (data.version !== 1 || typeof data.rooms !== 'object' || !data.rooms) {
-      throw new Error('invalid shape')
-    }
-    return data
-  } catch {
+  const raw = await readTextFileIfExists(FILE)
+  if (raw === null) {
     return { version: 1, rooms: {} }
   }
+
+  const data = JSON.parse(raw) as Payload
+  if (data.version !== 1 || typeof data.rooms !== 'object' || !data.rooms) {
+    throw new Error('room-policies.json has an invalid shape')
+  }
+  return data
 }
 
 async function writePayload(data: Payload): Promise<void> {
-  await fs.writeFile(FILE, `${JSON.stringify(data)}\n`, 'utf8')
+  await writeJsonAtomic(FILE, data)
 }
 
 function normalize(raw: StoredRoomPolicy | undefined): RoomPolicyPublic | null {
@@ -116,38 +117,42 @@ export async function patchRoomPolicy(
   roomId: string,
   patch: Partial<{ enabled: boolean; strangerFaceAlert: boolean; maxViewersPerRoom: number }>
 ): Promise<RoomPolicyPublic> {
-  const data = await readPayload()
-  const prev =
-    normalize(data.rooms[roomId]) ?? {
-      enabled: false,
-      strangerFaceAlert: false,
-      maxViewersPerRoom: clampMaxViewers(config.maxViewersPerRoom)
+  return enqueueMutation(async () => {
+    const data = await readPayload()
+    const prev =
+      normalize(data.rooms[roomId]) ?? {
+        enabled: false,
+        strangerFaceAlert: false,
+        maxViewersPerRoom: clampMaxViewers(config.maxViewersPerRoom)
+      }
+    const next: RoomPolicyPublic = {
+      enabled: patch.enabled !== undefined ? patch.enabled : prev.enabled,
+      strangerFaceAlert:
+        patch.strangerFaceAlert !== undefined ? patch.strangerFaceAlert : prev.strangerFaceAlert,
+      maxViewersPerRoom:
+        patch.maxViewersPerRoom !== undefined
+          ? clampMaxViewers(patch.maxViewersPerRoom)
+          : prev.maxViewersPerRoom
     }
-  const next: RoomPolicyPublic = {
-    enabled: patch.enabled !== undefined ? patch.enabled : prev.enabled,
-    strangerFaceAlert:
-      patch.strangerFaceAlert !== undefined ? patch.strangerFaceAlert : prev.strangerFaceAlert,
-    maxViewersPerRoom:
-      patch.maxViewersPerRoom !== undefined
-        ? clampMaxViewers(patch.maxViewersPerRoom)
-        : prev.maxViewersPerRoom
-  }
-  data.rooms[roomId] = {
-    enabled: next.enabled,
-    strangerFaceAlert: next.strangerFaceAlert,
-    maxViewersPerRoom: next.maxViewersPerRoom
-  }
-  await writePayload(data)
-  return next
+    data.rooms[roomId] = {
+      enabled: next.enabled,
+      strangerFaceAlert: next.strangerFaceAlert,
+      maxViewersPerRoom: next.maxViewersPerRoom
+    }
+    await writePayload(data)
+    return next
+  })
 }
 
 /** 删除房间策略；不存在则返回 false */
 export async function removeRoomPolicy(roomId: string): Promise<boolean> {
-  const data = await readPayload()
-  if (!Object.prototype.hasOwnProperty.call(data.rooms, roomId)) {
-    return false
-  }
-  delete data.rooms[roomId]
-  await writePayload(data)
-  return true
+  return enqueueMutation(async () => {
+    const data = await readPayload()
+    if (!Object.prototype.hasOwnProperty.call(data.rooms, roomId)) {
+      return false
+    }
+    delete data.rooms[roomId]
+    await writePayload(data)
+    return true
+  })
 }

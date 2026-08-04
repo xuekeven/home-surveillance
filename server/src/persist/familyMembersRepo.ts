@@ -1,6 +1,6 @@
-import fs from 'node:fs/promises'
 import path from 'node:path'
 import { DATA_DIR } from './dir.js'
+import { createMutationQueue, readTextFileIfExists, writeJsonAtomic } from './fileStore.js'
 
 export type FamilyMemberRecord = {
   id: string
@@ -16,6 +16,7 @@ type Payload = {
 }
 
 const FILE = path.join(DATA_DIR, 'family-members.json')
+const enqueueMutation = createMutationQueue()
 
 const MAX_PHOTO_DATA_URL_CHARS = 750_000
 
@@ -33,20 +34,20 @@ function sanitizePhotoDataUrl(raw: unknown): string | undefined {
 }
 
 async function readPayload(): Promise<Payload> {
-  try {
-    const raw = await fs.readFile(FILE, 'utf8')
-    const data = JSON.parse(raw) as Payload
-    if (data.version !== 1 || !Array.isArray(data.members)) {
-      throw new Error('invalid shape')
-    }
-    return data
-  } catch {
+  const raw = await readTextFileIfExists(FILE)
+  if (raw === null) {
     return { version: 1, members: [] }
   }
+
+  const data = JSON.parse(raw) as Payload
+  if (data.version !== 1 || !Array.isArray(data.members)) {
+    throw new Error('family-members.json has an invalid shape')
+  }
+  return data
 }
 
 async function writePayload(data: Payload): Promise<void> {
-  await fs.writeFile(FILE, `${JSON.stringify(data)}\n`, 'utf8')
+  await writeJsonAtomic(FILE, data)
 }
 
 export async function listFamilyMembers(): Promise<FamilyMemberRecord[]> {
@@ -68,38 +69,44 @@ export async function listFamilyMembers(): Promise<FamilyMemberRecord[]> {
 }
 
 export async function addFamilyMember(member: FamilyMemberRecord): Promise<void> {
-  const data = await readPayload()
-  data.members.push(member)
-  await writePayload(data)
+  return enqueueMutation(async () => {
+    const data = await readPayload()
+    data.members.push(member)
+    await writePayload(data)
+  })
 }
 
 export async function removeFamilyMember(id: string): Promise<boolean> {
-  const data = await readPayload()
-  const before = data.members.length
-  data.members = data.members.filter((m) => m.id !== id)
-  if (data.members.length === before) {
-    return false
-  }
-  await writePayload(data)
-  return true
+  return enqueueMutation(async () => {
+    const data = await readPayload()
+    const before = data.members.length
+    data.members = data.members.filter((m) => m.id !== id)
+    if (data.members.length === before) {
+      return false
+    }
+    await writePayload(data)
+    return true
+  })
 }
 
 export async function updateFamilyMember(
   id: string,
   patch: { label?: string; descriptor?: number[]; photoDataUrl?: string }
 ): Promise<boolean> {
-  const data = await readPayload()
-  const idx = data.members.findIndex((m) => m.id === id)
-  if (idx === -1) {
-    return false
-  }
-  const cur = data.members[idx]
-  data.members[idx] = {
-    ...cur,
-    ...(patch.label !== undefined ? { label: patch.label } : {}),
-    ...(patch.descriptor !== undefined ? { descriptor: patch.descriptor } : {}),
-    ...(patch.photoDataUrl !== undefined ? { photoDataUrl: patch.photoDataUrl } : {})
-  }
-  await writePayload(data)
-  return true
+  return enqueueMutation(async () => {
+    const data = await readPayload()
+    const idx = data.members.findIndex((m) => m.id === id)
+    if (idx === -1) {
+      return false
+    }
+    const cur = data.members[idx]
+    data.members[idx] = {
+      ...cur,
+      ...(patch.label !== undefined ? { label: patch.label } : {}),
+      ...(patch.descriptor !== undefined ? { descriptor: patch.descriptor } : {}),
+      ...(patch.photoDataUrl !== undefined ? { photoDataUrl: patch.photoDataUrl } : {})
+    }
+    await writePayload(data)
+    return true
+  })
 }

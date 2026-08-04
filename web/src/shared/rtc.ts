@@ -131,7 +131,19 @@ const SWITCH_CAMERA_VIDEO_CONSTRAINTS = {
   frameRate: { ideal: 30, max: 60 }
 }
 
-const OUTGOING_VIDEO_MAX_BITRATE_BPS = 4_500_000
+const OUTGOING_VIDEO_MAX_BITRATE_BPS = 6_000_000
+const OUTGOING_VIDEO_MAX_FRAMERATE = 30
+
+function preferVideoDetail(stream: MediaStream): MediaStream {
+  for (const track of stream.getVideoTracks()) {
+    try {
+      track.contentHint = 'detail'
+    } catch {
+      // Older WebViews may expose contentHint as read-only or not support it.
+    }
+  }
+  return stream
+}
 
 /** 在协商完成后尽量抬高发送端视频码率上限（最终仍受采集与网络影响） */
 export async function boostOutgoingVideoEncodingForPeers(peers: Iterable<PeerInstance>): Promise<void> {
@@ -156,6 +168,9 @@ export async function boostOutgoingVideoEncodingForPeers(peers: Iterable<PeerIns
 
         const enc = params.encodings[0]
         enc.maxBitrate = Math.max(enc.maxBitrate ?? 0, OUTGOING_VIDEO_MAX_BITRATE_BPS)
+        enc.maxFramerate = OUTGOING_VIDEO_MAX_FRAMERATE
+        enc.scaleResolutionDownBy = 1
+        params.degradationPreference = 'maintain-resolution'
         await sender.setParameters(params)
       } catch {
         // 协商未完成或不支持 setParameters 时忽略
@@ -184,15 +199,15 @@ export async function getCameraCaptureStream(): Promise<MediaStream> {
     autoGainControl: true
   }
   try {
-    return await navigator.mediaDevices.getUserMedia({
+    return preferVideoDetail(await navigator.mediaDevices.getUserMedia({
       video: CAMERA_CAPTURE_VIDEO_CONSTRAINTS,
       audio
-    })
+    }))
   } catch {
-    return navigator.mediaDevices.getUserMedia({
+    return preferVideoDetail(await navigator.mediaDevices.getUserMedia({
       video: CAMERA_CAPTURE_VIDEO_CONSTRAINTS,
       audio: false
-    })
+    }))
   }
 }
 
@@ -252,15 +267,15 @@ export async function replaceOutgoingVideoTrackForPeers(
 
 export async function getCameraVideoMediaStreamByDeviceId(deviceId: string): Promise<MediaStream> {
   try {
-    return await navigator.mediaDevices.getUserMedia({
+    return preferVideoDetail(await navigator.mediaDevices.getUserMedia({
       video: { ...SWITCH_CAMERA_VIDEO_CONSTRAINTS, deviceId: { exact: deviceId } },
       audio: false
-    })
+    }))
   } catch {
-    return navigator.mediaDevices.getUserMedia({
+    return preferVideoDetail(await navigator.mediaDevices.getUserMedia({
       video: { ...SWITCH_CAMERA_VIDEO_CONSTRAINTS, deviceId: { ideal: deviceId } },
       audio: false
-    })
+    }))
   }
 }
 

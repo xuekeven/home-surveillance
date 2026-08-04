@@ -18,6 +18,11 @@ import {
   SOCKET_HANDSHAKE_STALL_HINT
 } from '../shared/socket'
 import type { ConnectionStatus } from '../shared/status'
+import {
+  sampleWebRtcLinkStats,
+  type WebRtcLinkStats,
+  type WebRtcStatsSnapshot
+} from '../shared/webrtcStats'
 
 interface SignalMessage {
   from: string
@@ -55,6 +60,7 @@ export function useViewerRoom(roomId: string) {
   const [cameraOnline, setCameraOnline] = useState(false)
   const [viewerCount, setViewerCount] = useState(0)
   const [candidateType, setCandidateType] = useState<string>()
+  const [linkStats, setLinkStats] = useState<WebRtcLinkStats>()
 
   const [cameraDevices, setCameraDevices] = useState<CameraDeviceOption[]>([])
   const [activeCameraId, setActiveCameraId] = useState('')
@@ -69,6 +75,8 @@ export function useViewerRoom(roomId: string) {
   const micStreamRef = useRef<MediaStream | null>(null)
   const micAttachedToPeerRef = useRef(false)
   const micDesiredRef = useRef(false)
+  const statsSnapshotRef = useRef<WebRtcStatsSnapshot | undefined>(undefined)
+  const statsTimerRef = useRef<number | null>(null)
 
   const [dialogMicOn, setDialogMicOn] = useState(false)
   const [pushMicHeld, setPushMicHeld] = useState(false)
@@ -131,7 +139,43 @@ export function useViewerRoom(roomId: string) {
     }
   }, [])
 
+  const stopLinkStats = useCallback(() => {
+    if (statsTimerRef.current !== null) {
+      window.clearInterval(statsTimerRef.current)
+      statsTimerRef.current = null
+    }
+    statsSnapshotRef.current = undefined
+    setLinkStats(undefined)
+  }, [])
+
+  const startLinkStats = useCallback(
+    (peer: PeerInstance) => {
+      stopLinkStats()
+
+      const sample = async () => {
+        if (peerRef.current !== peer || peer.destroyed) {
+          return
+        }
+        try {
+          const result = await sampleWebRtcLinkStats(peer, 'inbound', statsSnapshotRef.current)
+          if (!result || peerRef.current !== peer) {
+            return
+          }
+          statsSnapshotRef.current = result.snapshot
+          setLinkStats(result.stats)
+        } catch {
+          // A transient getStats failure should not tear down an otherwise healthy call.
+        }
+      }
+
+      void sample()
+      statsTimerRef.current = window.setInterval(() => void sample(), 2000)
+    },
+    [stopLinkStats]
+  )
+
   const destroyPeer = useCallback(() => {
+    stopLinkStats()
     peerRef.current?.destroy()
     peerRef.current = null
     cameraSocketIdRef.current = null
@@ -140,7 +184,7 @@ export function useViewerRoom(roomId: string) {
     setRemoteStream(undefined)
     setCandidateType(undefined)
     void syncViewerUpstreamMic()
-  }, [syncViewerUpstreamMic])
+  }, [stopLinkStats, syncViewerUpstreamMic])
 
   const ensurePeer = useCallback((cameraSocketId: string): PeerInstance => {
     if (peerRef.current && cameraSocketIdRef.current === cameraSocketId) {
@@ -170,6 +214,7 @@ export function useViewerRoom(roomId: string) {
 
     peer.on('connect', () => {
       setStatus('connected')
+      startLinkStats(peer)
       void detectSelectedCandidateType(peer).then((type) => {
         if (type) {
           setCandidateType(type)
@@ -192,7 +237,7 @@ export function useViewerRoom(roomId: string) {
     })
 
     return peer
-  }, [destroyPeer, roomId, syncViewerUpstreamMic])
+  }, [destroyPeer, roomId, startLinkStats, syncViewerUpstreamMic])
 
   const start = useCallback(async () => {
     setError(undefined)
@@ -367,6 +412,7 @@ export function useViewerRoom(roomId: string) {
     cameraOnline,
     viewerCount,
     candidateType,
+    linkStats,
     dialogMicOn,
     setDialogMicOn,
     pushMicHeld,

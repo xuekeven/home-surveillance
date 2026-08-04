@@ -43,6 +43,9 @@ export function requireAdmin(request: Request, response: Response, next: NextFun
 const MAX_FAMILY_PHOTO_DATA_URL_CHARS = 750_000
 /** 陌生人整帧截图 body 上限（base64 字符串） */
 const MAX_STRANGER_SNAPSHOT_DATA_URL_CHARS = 14 * 1024 * 1024
+const STRANGER_SCREENSHOT_COOLDOWN_MS = 10_000
+const lastStrangerScreenshotAt = new Map<string, number>()
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
 
 function decodeSnapshotDataUrl(dataUrl: string): { buffer: Buffer; ext: 'png' } | null {
   const trimmed = dataUrl.trim()
@@ -52,7 +55,11 @@ function decodeSnapshotDataUrl(dataUrl: string): { buffer: Buffer; ext: 'png' } 
   }
   try {
     const buffer = Buffer.from(png[1], 'base64')
-    if (buffer.length < 80 || buffer.length > 12 * 1024 * 1024) {
+    if (
+      buffer.length < 80 ||
+      buffer.length > 12 * 1024 * 1024 ||
+      !buffer.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)
+    ) {
       return null
     }
     return { buffer, ext: 'png' }
@@ -157,6 +164,15 @@ export function mountApi(app: Express, apiPrefix: string): void {
       return
     }
 
+    const now = Date.now()
+    const elapsed = now - (lastStrangerScreenshotAt.get(roomId) ?? 0)
+    if (elapsed < STRANGER_SCREENSHOT_COOLDOWN_MS) {
+      const retryAfterMs = STRANGER_SCREENSHOT_COOLDOWN_MS - elapsed
+      response.setHeader('Retry-After', Math.ceil(retryAfterMs / 1000))
+      response.status(429).json({ error: 'rate_limited', retryAfterMs })
+      return
+    }
+
     const imageDataUrl = request.body?.imageDataUrl
     if (
       typeof imageDataUrl !== 'string' ||
@@ -178,15 +194,18 @@ export function mountApi(app: Express, apiPrefix: string): void {
       strangerCount = Math.max(1, Math.min(99, Math.floor(rawCount)))
     }
 
+    lastStrangerScreenshotAt.set(roomId, now)
+
     const baseLabel = formatStrangerSnapshotBaseLabel()
+    const filename = `${baseLabel}陌生人${strangerCount}人-${crypto.randomUUID().slice(0, 8)}.${decoded.ext}`
 
     try {
-      for (let r = 1; r <= strangerCount; r++) {
-        const filename = `${baseLabel}陌生人${r}.${decoded.ext}`
-        await fs.writeFile(path.join(STRANGER_IMAGES_DIR, filename), decoded.buffer)
-      }
-      response.json({ ok: true, saved: strangerCount })
+      await fs.writeFile(path.join(STRANGER_IMAGES_DIR, filename), decoded.buffer, { flag: 'wx' })
+      response.json({ ok: true, saved: 1, strangerCount, filename })
     } catch (error) {
+      if (lastStrangerScreenshotAt.get(roomId) === now) {
+        lastStrangerScreenshotAt.delete(roomId)
+      }
       const message = error instanceof Error ? error.message : 'write_failed'
       response.status(500).json({ error: 'stranger_screenshot_write_failed', message })
     }
