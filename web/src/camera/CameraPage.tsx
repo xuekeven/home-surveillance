@@ -138,10 +138,8 @@ export function CameraPage() {
                     {viewerInboundAudio[viewer.socketId] ? (
                       <em className="viewer-return-audio">对讲上行</em>
                     ) : null}
-                    {viewer.candidateType ? <em>{viewer.candidateType}</em> : null}
                   </div>
                   <WebRtcStatsPanel
-                    title="视频发送链路"
                     stats={viewer.linkStats}
                     capture={{
                       width: captureSettings?.width,

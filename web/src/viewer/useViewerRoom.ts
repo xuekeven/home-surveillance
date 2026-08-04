@@ -6,7 +6,6 @@ import type { CameraDeviceOption } from '../shared/cameraDeviceToolbar'
 import {
   assertWebRtcSupport,
   createViewerPeer,
-  detectSelectedCandidateType,
   getIceServers,
   getViewerMicMediaStream,
   isBenignPeerTeardownError,
@@ -63,7 +62,6 @@ export function useViewerRoom(roomId: string) {
   const [socketConnected, setSocketConnected] = useState(false)
   const [cameraOnline, setCameraOnline] = useState(false)
   const [viewerCount, setViewerCount] = useState(0)
-  const [candidateType, setCandidateType] = useState<string>()
   const [linkStats, setLinkStats] = useState<WebRtcLinkStats>()
   const [cameraTemperatureC, setCameraTemperatureC] = useState<number | null>()
 
@@ -187,7 +185,6 @@ export function useViewerRoom(roomId: string) {
     remoteStreamRef.current = null
     micAttachedToPeerRef.current = false
     setRemoteStream(undefined)
-    setCandidateType(undefined)
     void syncViewerUpstreamMic()
   }, [stopLinkStats, syncViewerUpstreamMic])
 
@@ -220,11 +217,6 @@ export function useViewerRoom(roomId: string) {
     peer.on('connect', () => {
       setStatus('connected')
       startLinkStats(peer)
-      void detectSelectedCandidateType(peer).then((type) => {
-        if (type) {
-          setCandidateType(type)
-        }
-      })
       void syncViewerUpstreamMic()
     })
 
@@ -430,7 +422,6 @@ export function useViewerRoom(roomId: string) {
     socketConnected,
     cameraOnline,
     viewerCount,
-    candidateType,
     linkStats,
     cameraTemperatureC,
     dialogMicOn,

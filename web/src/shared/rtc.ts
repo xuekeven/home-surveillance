@@ -278,39 +278,3 @@ export async function getCameraVideoMediaStreamByDeviceId(deviceId: string): Pro
     }))
   }
 }
-
-export async function detectSelectedCandidateType(peer: PeerInstance): Promise<string | undefined> {
-  const rtcPeer = peer as PeerInstance & { _pc?: RTCPeerConnection }
-  const connection = rtcPeer._pc
-  if (!connection) {
-    return undefined
-  }
-
-  const stats = await connection.getStats()
-  let selectedCandidatePair: Record<string, unknown> | undefined
-
-  stats.forEach((report) => {
-    const typedReport = report as unknown as Record<string, unknown>
-    if (report.type === 'transport' && typeof typedReport.selectedCandidatePairId === 'string') {
-      selectedCandidatePair = stats.get(typedReport.selectedCandidatePairId) as unknown as Record<string, unknown>
-    }
-
-    if (
-      report.type === 'candidate-pair' &&
-      typedReport.nominated === true &&
-      typedReport.state === 'succeeded'
-    ) {
-      selectedCandidatePair = typedReport
-    }
-  })
-
-  const localCandidateId = selectedCandidatePair?.localCandidateId
-  if (typeof localCandidateId !== 'string') {
-    return undefined
-  }
-
-  const localCandidate = stats.get(localCandidateId) as unknown as Record<string, unknown> | undefined
-  return typeof localCandidate?.candidateType === 'string'
-    ? localCandidate.candidateType
-    : undefined
-}

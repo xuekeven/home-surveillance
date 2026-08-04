@@ -24,7 +24,6 @@ export function ViewerPage() {
     socketConnected,
     cameraOnline,
     viewerCount,
-    candidateType,
     linkStats,
     cameraTemperatureC,
     dialogMicOn,
@@ -136,14 +135,12 @@ export function ViewerPage() {
               <StatusItem label="观看端状态" value={statusLabel(status)} />
               <StatusItem label="采集端温度" value={formatDeviceTemperature(cameraTemperatureC)} />
               <StatusItem label="正在观看" value={`${viewerCount}`} />
-              <StatusItem label="ICE 候选路径" value={candidateType || '未知'} />
               <StatusItem
                 label="对话采集"
                 value={dialogMicOn || pushMicHeld ? '开启' : '关闭'}
               />
+              <WebRtcStatsPanel inline stats={linkStats} />
             </div>
-
-            <WebRtcStatsPanel title="视频接收链路" stats={linkStats} />
 
             <div className="viewer-voice">
               <button

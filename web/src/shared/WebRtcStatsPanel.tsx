@@ -54,25 +54,6 @@ function qualityLimitationLabel(reason: string | undefined): string {
   }
 }
 
-function diagnose(stats: WebRtcLinkStats | undefined): { label: string; tone: string } {
-  if (stats?.bitrateBps === undefined) {
-    return { label: '采样中', tone: 'pending' }
-  }
-  if (stats.qualityLimitationReason === 'cpu') {
-    return { label: 'CPU 受限', tone: 'warning' }
-  }
-  if (stats.qualityLimitationReason === 'bandwidth') {
-    return { label: '带宽受限', tone: 'warning' }
-  }
-  if ((stats.packetLossPercent ?? 0) >= 3) {
-    return { label: '丢包偏高', tone: 'warning' }
-  }
-  if ((stats.roundTripTimeMs ?? 0) >= 300) {
-    return { label: '延迟偏高', tone: 'warning' }
-  }
-  return { label: '链路正常', tone: 'good' }
-}
-
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="status-item webrtc-metric">
@@ -83,15 +64,14 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 export function WebRtcStatsPanel({
-  title,
   stats,
-  capture
+  capture,
+  inline = false
 }: {
-  title?: string
   stats?: WebRtcLinkStats
   capture?: CaptureVideoStats
+  inline?: boolean
 }) {
-  const health = diagnose(stats)
   const bandwidth =
     stats?.direction === 'outbound'
       ? stats.availableOutgoingBitrateBps
@@ -102,38 +82,45 @@ export function WebRtcStatsPanel({
       }`
     : '--'
 
+  const metrics = (
+    <>
+      {capture ? (
+        <Metric
+          label="本地采集"
+          value={formatVideoSize(capture.width, capture.height, capture.frameRate)}
+        />
+      ) : null}
+      <Metric
+        label={stats?.direction === 'outbound' ? '视频发送码率' : '视频接收码率'}
+        value={formatBitrate(stats?.bitrateBps)}
+      />
+      <Metric
+        label={stats?.direction === 'outbound' ? '可用上行带宽' : '可用下行带宽'}
+        value={formatBitrate(bandwidth)}
+      />
+      <Metric
+        label="传输规格"
+        value={formatVideoSize(stats?.frameWidth, stats?.frameHeight, stats?.framesPerSecond)}
+      />
+      <Metric label="往返延迟 RTT" value={formatMilliseconds(stats?.roundTripTimeMs)} />
+      <Metric label="丢包率" value={formatPercent(stats?.packetLossPercent)} />
+      <Metric label="抖动" value={formatMilliseconds(stats?.jitterMs)} />
+      <Metric label="ICE 路径" value={route} />
+      <Metric label="视频编码" value={stats?.codec ?? '--'} />
+      {stats?.direction === 'outbound' ? (
+        <Metric label="画质限制" value={qualityLimitationLabel(stats.qualityLimitationReason)} />
+      ) : null}
+      {stats?.implementation ? <Metric label="编解码实现" value={stats.implementation} /> : null}
+    </>
+  )
+
+  if (inline) {
+    return metrics
+  }
+
   return (
     <div className="webrtc-diagnostics">
-      <div className="webrtc-diagnostics-head">
-        {title ? <h3>{title}</h3> : <span />}
-        <span className={`webrtc-health ${health.tone}`}>{health.label}</span>
-      </div>
-      <div className="grid webrtc-metrics">
-        {capture ? (
-          <Metric
-            label="本地采集"
-            value={formatVideoSize(capture.width, capture.height, capture.frameRate)}
-          />
-        ) : null}
-        <Metric
-          label={stats?.direction === 'outbound' ? '视频发送码率' : '视频接收码率'}
-          value={formatBitrate(stats?.bitrateBps)}
-        />
-        <Metric
-          label={stats?.direction === 'outbound' ? '可用上行带宽' : '可用下行带宽'}
-          value={formatBitrate(bandwidth)}
-        />
-        <Metric label="传输规格" value={formatVideoSize(stats?.frameWidth, stats?.frameHeight, stats?.framesPerSecond)} />
-        <Metric label="往返延迟 RTT" value={formatMilliseconds(stats?.roundTripTimeMs)} />
-        <Metric label="丢包率" value={formatPercent(stats?.packetLossPercent)} />
-        <Metric label="抖动" value={formatMilliseconds(stats?.jitterMs)} />
-        <Metric label="ICE 路径" value={route} />
-        <Metric label="视频编码" value={stats?.codec ?? '--'} />
-        {stats?.direction === 'outbound' ? (
-          <Metric label="画质限制" value={qualityLimitationLabel(stats.qualityLimitationReason)} />
-        ) : null}
-        {stats?.implementation ? <Metric label="编解码实现" value={stats.implementation} /> : null}
-      </div>
+      <div className="grid webrtc-metrics">{metrics}</div>
     </div>
   )
 }

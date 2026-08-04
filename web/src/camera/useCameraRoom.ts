@@ -14,7 +14,6 @@ import {
   assertWebRtcSupport,
   boostOutgoingVideoEncodingForPeers,
   createCameraPeer,
-  detectSelectedCandidateType,
   getCameraCaptureStream,
   getCameraVideoMediaStreamByDeviceId,
   getIceServers,
@@ -32,7 +31,6 @@ import {
 interface ViewerInfo {
   socketId: string
   status: ConnectionStatus
-  candidateType?: string
   linkStats?: WebRtcLinkStats
 }
 
@@ -231,11 +229,6 @@ export function useCameraRoom(roomId: string) {
       peer.on('connect', () => {
         updateViewer(viewerSocketId, { status: 'connected' })
         startViewerStats(viewerSocketId, peer)
-        void detectSelectedCandidateType(peer).then((candidateType) => {
-          if (candidateType) {
-            updateViewer(viewerSocketId, { candidateType })
-          }
-        })
         void boostOutgoingVideoEncodingForPeers([peer])
       })
 
