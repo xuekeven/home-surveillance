@@ -915,13 +915,60 @@ function AdminRoomsSection({ adminToken }: { adminToken: string }) {
 
 export function AdminPage() {
   const [tokenInput, setTokenInput] = useState('')
-  const [token, setToken] = useState(() => sessionStorage.getItem(SESSION_KEY) ?? '')
+  const [token, setToken] = useState('')
+  const [loginError, setLoginError] = useState('')
+  const [loginPending, setLoginPending] = useState(false)
 
-  function login(event: FormEvent) {
-    event.preventDefault()
-    const next = tokenInput.trim()
+  const validateAndStoreToken = useCallback(async (next: string) => {
+    await adminFetchRooms(next)
     sessionStorage.setItem(SESSION_KEY, next)
     setToken(next)
+  }, [])
+
+  useEffect(() => {
+    const saved = sessionStorage.getItem(SESSION_KEY)?.trim()
+    if (!saved) {
+      return
+    }
+
+    let cancelled = false
+    setLoginPending(true)
+    void validateAndStoreToken(saved)
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          sessionStorage.removeItem(SESSION_KEY)
+          setLoginError(error instanceof Error ? error.message : '管理员密钥验证失败')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoginPending(false)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [validateAndStoreToken])
+
+  async function login(event: FormEvent) {
+    event.preventDefault()
+    const next = tokenInput.trim()
+    if (!next || loginPending) {
+      return
+    }
+
+    setLoginError('')
+    setLoginPending(true)
+    try {
+      await validateAndStoreToken(next)
+      setTokenInput('')
+    } catch (error) {
+      sessionStorage.removeItem(SESSION_KEY)
+      setLoginError(error instanceof Error ? error.message : '管理员密钥验证失败')
+    } finally {
+      setLoginPending(false)
+    }
   }
 
   function logout() {
@@ -934,7 +981,7 @@ export function AdminPage() {
     return (
       <main className="page">
         <section className="panel admin-login-panel">
-          <div className="eyebrow">Admin</div>
+          <div className="eyebrow">管理后台</div>
           <h1>后台管理</h1>
           <form className="admin-login-form" onSubmit={login}>
             <input
@@ -944,8 +991,12 @@ export function AdminPage() {
               value={tokenInput}
               onChange={(event) => setTokenInput(event.target.value)}
               className="admin-login-input"
+              disabled={loginPending}
             />
-            <button type="submit">登录</button>
+            <button type="submit" disabled={loginPending || !tokenInput.trim()}>
+              {loginPending ? '验证中…' : '登录'}
+            </button>
+            {loginError ? <div className="alert">{loginError}</div> : null}
           </form>
         </section>
       </main>
@@ -957,7 +1008,7 @@ export function AdminPage() {
       <section className="panel admin-dashboard">
         <div className="admin-dashboard-head">
           <div>
-            <div className="eyebrow">Admin</div>
+            <div className="eyebrow">管理后台</div>
             <h1>后台管理</h1>
           </div>
           <button type="button" className="secondary" onClick={logout}>

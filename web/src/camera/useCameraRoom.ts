@@ -12,7 +12,8 @@ import type { CameraDeviceOption } from '../shared/cameraDeviceToolbar'
 import { readDeviceTemperatureC } from '../shared/deviceTemperature'
 import {
   assertWebRtcSupport,
-  boostOutgoingVideoEncodingForPeers,
+  applyVideoQualityPreferenceToTrack,
+  configureOutgoingVideoEncoding,
   createCameraPeer,
   getCameraCaptureStream,
   getCameraVideoMediaStreamByDeviceId,
@@ -20,8 +21,14 @@ import {
   isBenignPeerTeardownError,
   listVideoInputDevices,
   replaceOutgoingVideoTrackForPeers,
+  sortVideoInputDevices,
   type PeerInstance
 } from '../shared/rtc'
+import {
+  DEFAULT_VIDEO_QUALITY_PREFERENCE,
+  type VideoQualityPreference
+} from '../shared/videoQualityPreference'
+import { getWebRtcConnectionTypeLabel } from '../shared/WebRtcStatsPanel'
 import {
   sampleWebRtcLinkStats,
   type WebRtcLinkStats,
@@ -31,6 +38,7 @@ import {
 interface ViewerInfo {
   socketId: string
   status: ConnectionStatus
+  deviceName?: string
   linkStats?: WebRtcLinkStats
 }
 
@@ -41,6 +49,7 @@ interface SignalMessage {
 
 interface ViewerJoinedMessage {
   viewerSocketId: string
+  deviceName?: string
 }
 
 interface ViewerLeftMessage {
@@ -56,10 +65,17 @@ interface ViewerSwitchCameraMessage {
   viewerSocketId: string
 }
 
+
+interface ViewerVideoQualityMessage {
+  viewerSocketId: string
+  preference: VideoQualityPreference
+}
 interface RoomStateFromServer {
   hasCamera: boolean
   viewerCount: number
   viewerSocketIds?: string[]
+  viewerDeviceNames?: Record<string, string>
+  viewerVideoQualityPreferences?: Record<string, VideoQualityPreference>
 }
 
 export function useCameraRoom(roomId: string) {
@@ -82,7 +98,10 @@ export function useCameraRoom(roomId: string) {
   const [viewerInboundAudio, setViewerInboundAudio] = useState<Record<string, MediaStream>>({})
   const pendingViewersRef = useRef<string[]>([])
   const roomCaptureStartedRef = useRef(false)
+  const viewerDeviceNamesRef = useRef<Map<string, string>>(new Map())
   const statsTimersRef = useRef<Map<string, number>>(new Map())
+  const viewerVideoQualityPreferencesRef = useRef<Map<string, VideoQualityPreference>>(new Map())
+  const viewerConnectionTypesRef = useRef<Map<string, string>>(new Map())
   const statsSnapshotsRef = useRef<Map<string, WebRtcStatsSnapshot>>(new Map())
 
   const publishDeviceTemperature = useCallback(async () => {
@@ -98,11 +117,22 @@ export function useCameraRoom(roomId: string) {
   const refreshCameraCatalog = useCallback(
     async (stream: MediaStream) => {
       try {
-        const devices = await listVideoInputDevices()
-        const mapped = devices.map((d, i) => ({
-          deviceId: d.deviceId,
-          label: d.label.trim() || `摄像头 ${i + 1}`
-        }))
+        const devices = sortVideoInputDevices(await listVideoInputDevices())
+        const labelCounts = new Map<string, number>()
+        for (const [index, device] of devices.entries()) {
+          const label = device.label.trim() || `Camera ${index + 1}`
+          labelCounts.set(label, (labelCounts.get(label) ?? 0) + 1)
+        }
+        const labelIndexes = new Map<string, number>()
+        const mapped = devices.map((device, index) => {
+          const label = device.label.trim() || `Camera ${index + 1}`
+          const duplicateIndex = (labelIndexes.get(label) ?? 0) + 1
+          labelIndexes.set(label, duplicateIndex)
+          return {
+            deviceId: device.deviceId,
+            label: (labelCounts.get(label) ?? 0) > 1 ? `${label} ${duplicateIndex}` : label
+          }
+        })
         setCameraDevices(mapped)
         const sid = stream.getVideoTracks()[0]?.getSettings().deviceId
         const nextActive = sid || mapped[0]?.deviceId || ''
@@ -143,6 +173,7 @@ export function useCameraRoom(roomId: string) {
       statsTimersRef.current.delete(viewerSocketId)
     }
     statsSnapshotsRef.current.delete(viewerSocketId)
+    viewerConnectionTypesRef.current.delete(viewerSocketId)
   }, [])
 
   const startViewerStats = useCallback(
@@ -164,6 +195,19 @@ export function useCameraRoom(roomId: string) {
           }
           statsSnapshotsRef.current.set(viewerSocketId, result.snapshot)
           updateViewer(viewerSocketId, { linkStats: result.stats })
+
+          const connectionType = getWebRtcConnectionTypeLabel(result.stats)
+          if (viewerConnectionTypesRef.current.get(viewerSocketId) !== connectionType) {
+            viewerConnectionTypesRef.current.set(viewerSocketId, connectionType)
+            const socket = socketRef.current
+            if (socket?.connected) {
+              socket.emit('camera-connection-info', {
+                roomId,
+                viewerSocketId,
+                connectionType
+              })
+            }
+          }
         } catch {
           // Keep the media connection alive if a browser temporarily rejects getStats().
         }
@@ -175,11 +219,15 @@ export function useCameraRoom(roomId: string) {
         window.setInterval(() => void sample(), 2000)
       )
     },
-    [stopViewerStats, updateViewer]
+    [roomId, stopViewerStats, updateViewer]
   )
 
-  const destroyPeer = useCallback((viewerSocketId: string) => {
+  const destroyPeer = useCallback((viewerSocketId: string, expectedPeer?: PeerInstance) => {
     const peer = peersRef.current.get(viewerSocketId)
+    if (expectedPeer && peer !== expectedPeer) {
+      return
+    }
+
     peersRef.current.delete(viewerSocketId)
     stopViewerStats(viewerSocketId)
     if (peer) {
@@ -207,12 +255,18 @@ export function useCameraRoom(roomId: string) {
       }
 
       destroyPeer(viewerSocketId)
-      updateViewer(viewerSocketId, { status: 'connecting-webrtc' })
+      updateViewer(viewerSocketId, {
+        status: 'connecting-webrtc',
+        deviceName: viewerDeviceNamesRef.current.get(viewerSocketId)
+      })
 
       const peer = createCameraPeer(stream, iceServersRef.current)
       peersRef.current.set(viewerSocketId, peer)
 
       peer.on('signal', (signal) => {
+        if (peersRef.current.get(viewerSocketId) !== peer) {
+          return
+        }
         socket.emit('signal', {
           roomId,
           to: viewerSocketId,
@@ -221,24 +275,38 @@ export function useCameraRoom(roomId: string) {
       })
 
       peer.on('stream', (remoteStream: MediaStream) => {
+        if (peersRef.current.get(viewerSocketId) !== peer) {
+          return
+        }
         if (remoteStream.getAudioTracks().length > 0) {
           setViewerInboundAudio((prev) => ({ ...prev, [viewerSocketId]: remoteStream }))
         }
       })
 
       peer.on('connect', () => {
+        if (peersRef.current.get(viewerSocketId) !== peer) {
+          return
+        }
         updateViewer(viewerSocketId, { status: 'connected' })
         startViewerStats(viewerSocketId, peer)
-        void boostOutgoingVideoEncodingForPeers([peer])
+        void configureOutgoingVideoEncoding(
+          peer,
+          viewerVideoQualityPreferencesRef.current.get(viewerSocketId) ??
+            DEFAULT_VIDEO_QUALITY_PREFERENCE,
+          stream.getVideoTracks()[0]
+        )
       })
 
       peer.on('close', () => {
-        destroyPeer(viewerSocketId)
+        destroyPeer(viewerSocketId, peer)
       })
 
       peer.on('error', (peerError) => {
+        if (peersRef.current.get(viewerSocketId) !== peer) {
+          return
+        }
         if (isBenignPeerTeardownError(peerError)) {
-          destroyPeer(viewerSocketId)
+          destroyPeer(viewerSocketId, peer)
           return
         }
         updateViewer(viewerSocketId, { status: 'error' })
@@ -256,6 +324,12 @@ export function useCameraRoom(roomId: string) {
       if (!allow.has(id)) {
         destroyPeer(id)
       }
+    }
+    for (const id of [...viewerDeviceNamesRef.current.keys()]) {
+      if (!allow.has(id)) viewerDeviceNamesRef.current.delete(id)
+    }
+    for (const id of [...viewerVideoQualityPreferencesRef.current.keys()]) {
+      if (!allow.has(id)) viewerVideoQualityPreferencesRef.current.delete(id)
     }
   }, [destroyPeer])
 
@@ -279,6 +353,7 @@ export function useCameraRoom(roomId: string) {
         return
       }
 
+      pendingViewersRef.current = pendingViewersRef.current.filter((id) => !allowIds.includes(id))
       for (const id of allowIds) {
         if (!peersRef.current.has(id)) {
           createPeerForViewer(id)
@@ -317,6 +392,14 @@ export function useCameraRoom(roomId: string) {
           throw new Error('未拿到新的视频轨')
         }
 
+        const savedPreferences = [...viewerVideoQualityPreferencesRef.current.values()]
+        const preference =
+          (viewerSocketId
+            ? viewerVideoQualityPreferencesRef.current.get(viewerSocketId)
+            : undefined) ??
+          savedPreferences[savedPreferences.length - 1] ??
+          DEFAULT_VIDEO_QUALITY_PREFERENCE
+        await applyVideoQualityPreferenceToTrack(newVideoTrack, preference)
         await replaceOutgoingVideoTrackForPeers(peersRef.current.values(), newVideoTrack)
 
         const prev = streamRef.current
@@ -329,7 +412,13 @@ export function useCameraRoom(roomId: string) {
         setLocalStream(combined)
         setActiveCameraId(deviceId)
         void refreshCameraCatalog(combined)
-        void boostOutgoingVideoEncodingForPeers(peersRef.current.values())
+        for (const [id, peer] of peersRef.current) {
+          void configureOutgoingVideoEncoding(
+            peer,
+            viewerVideoQualityPreferencesRef.current.get(id) ?? DEFAULT_VIDEO_QUALITY_PREFERENCE,
+            newVideoTrack
+          )
+        }
       } catch (switchErr) {
         newStream?.getTracks().forEach((track) => track.stop())
         const msg = switchErr instanceof Error ? switchErr.message : '切换摄像头失败'
@@ -359,6 +448,38 @@ export function useCameraRoom(roomId: string) {
       socket.off('viewer-switch-camera', onViewerSwitchCamera)
     }
   }, [socketConnected, switchCamera])
+
+  useEffect(() => {
+    const socket = socketRef.current
+    if (!socketConnected || !socket) return undefined
+
+    const onViewerVideoQuality = ({ viewerSocketId, preference }: ViewerVideoQualityMessage) => {
+      viewerVideoQualityPreferencesRef.current.set(viewerSocketId, preference)
+      const track = streamRef.current?.getVideoTracks()[0]
+      const peer = peersRef.current.get(viewerSocketId)
+      if (!track) return
+
+      void (async () => {
+        try {
+          await applyVideoQualityPreferenceToTrack(track, preference)
+          if (peer && peersRef.current.get(viewerSocketId) === peer) {
+            await configureOutgoingVideoEncoding(peer, preference, track)
+          }
+          const stream = streamRef.current
+          if (stream) setLocalStream(new MediaStream(stream.getTracks()))
+        } catch {
+          if (peer && peersRef.current.get(viewerSocketId) === peer) {
+            await configureOutgoingVideoEncoding(peer, preference, track)
+          }
+        }
+      })()
+    }
+
+    socket.on('viewer-video-quality', onViewerVideoQuality)
+    return () => {
+      socket.off('viewer-video-quality', onViewerVideoQuality)
+    }
+  }, [socketConnected])
 
   const start = useCallback(async () => {
     setError(undefined)
@@ -439,6 +560,17 @@ export function useCameraRoom(roomId: string) {
       })
 
       socket.on('room-state', (state: RoomStateFromServer) => {
+        if (state.viewerDeviceNames) {
+          for (const [socketId, deviceName] of Object.entries(state.viewerDeviceNames)) {
+            viewerDeviceNamesRef.current.set(socketId, deviceName)
+            updateViewer(socketId, { deviceName })
+          }
+        }
+        if (state.viewerVideoQualityPreferences) {
+          for (const [socketId, preference] of Object.entries(state.viewerVideoQualityPreferences)) {
+            viewerVideoQualityPreferencesRef.current.set(socketId, preference)
+          }
+        }
         if (Array.isArray(state.viewerSocketIds)) {
           mergeServerViewerList(state.viewerSocketIds)
         }
@@ -451,15 +583,25 @@ export function useCameraRoom(roomId: string) {
           try {
             setStatus('connecting-media')
             const stream = await getCameraCaptureStream()
+            const savedPreferences = [...viewerVideoQualityPreferencesRef.current.values()]
+            const initialPreference =
+              savedPreferences[savedPreferences.length - 1] ??
+              DEFAULT_VIDEO_QUALITY_PREFERENCE
+            const videoTrack = stream.getVideoTracks()[0]
+            if (videoTrack) {
+              await applyVideoQualityPreferenceToTrack(videoTrack, initialPreference)
+            }
             streamRef.current = stream
             setLocalStream(stream)
             await refreshCameraCatalog(stream)
             setStatus('waiting-viewer')
 
-            const pending = [...pendingViewersRef.current]
+            const pending = [...new Set(pendingViewersRef.current)]
             pendingViewersRef.current = []
             for (const viewerSocketId of pending) {
-              createPeerForViewer(viewerSocketId)
+              if (!peersRef.current.has(viewerSocketId)) {
+                createPeerForViewer(viewerSocketId)
+              }
             }
           } catch (captureErr) {
             roomCaptureStartedRef.current = false
@@ -471,18 +613,24 @@ export function useCameraRoom(roomId: string) {
         })()
       })
 
-      socket.on('viewer-joined', ({ viewerSocketId }: ViewerJoinedMessage) => {
+      socket.on('viewer-joined', ({ viewerSocketId, deviceName }: ViewerJoinedMessage) => {
+        if (deviceName) viewerDeviceNamesRef.current.set(viewerSocketId, deviceName)
         void publishDeviceTemperature()
         const s = streamRef.current
         if (s) {
-          createPeerForViewer(viewerSocketId)
+          pendingViewersRef.current = pendingViewersRef.current.filter((id) => id !== viewerSocketId)
+          if (!peersRef.current.has(viewerSocketId)) {
+            createPeerForViewer(viewerSocketId)
+          }
           void refreshCameraCatalog(s)
-        } else {
+        } else if (!pendingViewersRef.current.includes(viewerSocketId)) {
           pendingViewersRef.current.push(viewerSocketId)
         }
       })
 
       socket.on('viewer-left', ({ viewerSocketId }: ViewerLeftMessage) => {
+        viewerDeviceNamesRef.current.delete(viewerSocketId)
+        viewerVideoQualityPreferencesRef.current.delete(viewerSocketId)
         destroyPeer(viewerSocketId)
       })
 
@@ -608,6 +756,7 @@ export function useCameraRoom(roomId: string) {
     setLocalStream(undefined)
     pendingViewersRef.current = []
     roomCaptureStartedRef.current = false
+    viewerVideoQualityPreferencesRef.current.clear()
     setViewers([])
     setViewerInboundAudio({})
     setCameraDevices([])

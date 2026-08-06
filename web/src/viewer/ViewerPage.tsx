@@ -7,10 +7,10 @@ import { FaceAnalysisOverlayLazy } from '../shared/faceAnalysisOverlayLazy'
 import { FaceTrackingRadios } from '../shared/faceTrackingRadios'
 import { VideoClockOverlay } from '../shared/VideoClockOverlay'
 import { statusLabel } from '../shared/status'
-import { formatDeviceTemperature } from '../shared/deviceTemperature'
 import { ROOM_MISSING_MESSAGE } from '../shared/roomJoinMessages'
 import { useFamilyMembers } from '../shared/useFamilyMembers'
 import { WebRtcStatsPanel } from '../shared/WebRtcStatsPanel'
+import { VideoQualityPreferenceToolbar } from '../shared/videoQualityPreference'
 import { appConfig } from '../config'
 import { useViewerRoom } from './useViewerRoom'
 
@@ -21,11 +21,9 @@ export function ViewerPage() {
     status,
     error,
     remoteStream,
-    socketConnected,
     cameraOnline,
-    viewerCount,
     linkStats,
-    cameraTemperatureC,
+    cameraConnectionType,
     dialogMicOn,
     setDialogMicOn,
     pushMicHeld,
@@ -34,9 +32,9 @@ export function ViewerPage() {
     activeCameraId,
     switchingCamera,
     switchRemoteCamera,
-    cameraClockSkewMs,
-    restart,
-    stop
+    videoQualityPreference,
+    setVideoQualityPreference,
+    cameraClockSkewMs
   } = useViewerRoom(roomId)
 
   const voiceReady = status === 'connected'
@@ -72,7 +70,7 @@ export function ViewerPage() {
   return (
     <main className="page">
       <section className="panel">
-        <div className="eyebrow">Viewer</div>
+        <div className="eyebrow">观看端</div>
         <h1>观看端</h1>
         <p className="muted">房间：{roomId}</p>
 
@@ -81,6 +79,7 @@ export function ViewerPage() {
         {!roomMissing ? (
           <>
             <div className="device-controls-block viewer-device-controls">
+
               <CameraDeviceToolbar
                 idPrefix="viewer"
                 label="采集摄像头"
@@ -102,9 +101,16 @@ export function ViewerPage() {
                 enabled={faceTrackingEnabled}
                 onChange={setFaceTrackingEnabled}
               />
+
+              <VideoQualityPreferenceToolbar
+                idPrefix="viewer"
+                value={videoQualityPreference}
+                disabled={!cameraOnline}
+                onChange={setVideoQualityPreference}
+              />
             </div>
 
-            <div className="video-face-stack">
+            <div className="video-face-stack fitted-video-stack">
               <video
                 ref={videoRef}
                 className="video viewer-remote-video"
@@ -127,19 +133,6 @@ export function ViewerPage() {
                   />
                 </Suspense>
               ) : null}
-            </div>
-
-            <div className="grid">
-              <StatusItem label="信令连接" value={socketConnected ? '已连接' : '未连接'} />
-              <StatusItem label="采集端在线" value={cameraOnline ? '是' : '否'} />
-              <StatusItem label="观看端状态" value={statusLabel(status)} />
-              <StatusItem label="采集端温度" value={formatDeviceTemperature(cameraTemperatureC)} />
-              <StatusItem label="正在观看" value={`${viewerCount}`} />
-              <StatusItem
-                label="对话采集"
-                value={dialogMicOn || pushMicHeld ? '开启' : '关闭'}
-              />
-              <WebRtcStatsPanel inline stats={linkStats} />
             </div>
 
             <div className="viewer-voice">
@@ -173,10 +166,21 @@ export function ViewerPage() {
               <p className="muted viewer-voice-hint">与采集端建立 WebRTC 连接后可使用对讲。</p>
             ) : null}
 
-            <div className="actions">
-              <button onClick={() => void restart()}>重新连接</button>
-              <button className="secondary" onClick={stop}>停止连接</button>
+            <div className="grid viewer-status-grid">
+              <StatusItem label="采集端在线" value={cameraOnline ? '是' : '否'} />
+              <StatusItem label="观看端状态" value={statusLabel(status)} />
+              <StatusItem
+                label="对话采集"
+                value={dialogMicOn || pushMicHeld ? '开启' : '关闭'}
+              />
             </div>
+
+            <WebRtcStatsPanel
+              stats={linkStats}
+              viewerLayout
+              connectionTypeOverride={cameraConnectionType}
+            />
+
           </>
         ) : null}
       </section>

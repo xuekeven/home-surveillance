@@ -50,7 +50,8 @@ export function joinCamera(roomId: string, socketId: string): { ok: true } | { o
 export function joinViewer(
   roomId: string,
   socketId: string,
-  maxViewers: number
+  maxViewers: number,
+  deviceName?: string
 ): { ok: true } | { ok: false; reason: string } {
   const room = ensureRoom(roomId)
 
@@ -59,7 +60,7 @@ export function joinViewer(
   }
 
   room.viewers.add(socketId)
-  clients.set(socketId, { roomId, role: 'viewer' })
+  clients.set(socketId, { roomId, role: 'viewer', deviceName })
   return { ok: true }
 }
 
@@ -100,11 +101,27 @@ export function listViewers(roomId: string): string[] {
 
 export function toPublicRoomState(roomId: string): PublicRoomState {
   const room = rooms.get(roomId)
+  const viewerSocketIds = room ? [...room.viewers] : []
+  const viewerDeviceNames = Object.fromEntries(
+    viewerSocketIds.flatMap((socketId) => {
+      const deviceName = clients.get(socketId)?.deviceName
+      return deviceName ? [[socketId, deviceName]] : []
+    })
+  )
+
+  const viewerVideoQualityPreferences = Object.fromEntries(
+    viewerSocketIds.flatMap((socketId) => {
+      const preference = clients.get(socketId)?.videoQualityPreference
+      return preference ? [[socketId, preference]] : []
+    })
+  )
 
   return {
     roomId,
     hasCamera: Boolean(room?.cameraSocketId),
     viewerCount: room?.viewers.size ?? 0,
-    viewerSocketIds: room ? [...room.viewers] : []
+    viewerSocketIds,
+    viewerDeviceNames,
+    viewerVideoQualityPreferences
   }
 }

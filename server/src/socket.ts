@@ -14,6 +14,7 @@ import {
   toPublicRoomState
 } from './rooms.js'
 import type {
+  CameraConnectionInfoPayload,
   ClientState,
   CameraCatalogPayload,
   CameraRoomClockPayload,
@@ -21,8 +22,29 @@ import type {
   JoinRoomPayload,
   SignalPayload,
   SwitchCameraPayload,
-  SwitchFailedPayload
+  SwitchFailedPayload,
+  VideoQualityPreference,
+  VideoQualityPreferencePayload
 } from './types.js'
+
+const VIDEO_QUALITY_PREFERENCES = new Set<VideoQualityPreference>([
+  'fps-10', 'fps-30', 'fps-60', 'fps-90',
+  'resolution-360', 'resolution-480', 'resolution-720',
+  'resolution-1080', 'resolution-1440', 'resolution-2160'
+])
+
+const CONNECTION_TYPES = new Set([
+  '通过服务器中转（TURN）',
+  'Tailscale 私有网络连接',
+  'NAT 打洞直连（IPv4）',
+  'NAT 映射直连（IPv4）',
+  '局域网（IPv4）',
+  '公网 IPv4 直连',
+  '局域网（IPv6）',
+  '公网 IPv6 直连',
+  '其他私有网络连接',
+  '两台设备直接连接'
+])
 
 function emitRoomState(io: Server, roomId: string): void {
   const state = toPublicRoomState(roomId)
@@ -65,7 +87,9 @@ function isJoinRoomPayload(payload: unknown): payload is JoinRoomPayload {
   return (
     isValidRoomId(candidate.roomId) &&
     isValidRole(candidate.role) &&
-    typeof candidate.token === 'string'
+    typeof candidate.token === 'string' &&
+    (candidate.deviceName === undefined ||
+      (typeof candidate.deviceName === 'string' && candidate.deviceName.trim().length <= 80))
   )
 }
 
@@ -108,6 +132,34 @@ function isSwitchFailedPayload(payload: unknown): payload is SwitchFailedPayload
 
   const candidate = payload as Partial<SwitchFailedPayload>
   return typeof candidate.viewerSocketId === 'string' && typeof candidate.message === 'string'
+}
+
+function isVideoQualityPreferencePayload(payload: unknown): payload is VideoQualityPreferencePayload {
+  if (!payload || typeof payload !== 'object') {
+    return false
+  }
+
+  const candidate = payload as Partial<VideoQualityPreferencePayload>
+  return (
+    isValidRoomId(candidate.roomId) &&
+    typeof candidate.preference === 'string' &&
+    VIDEO_QUALITY_PREFERENCES.has(candidate.preference as VideoQualityPreference)
+  )
+}
+
+function isCameraConnectionInfoPayload(payload: unknown): payload is CameraConnectionInfoPayload {
+  if (!payload || typeof payload !== 'object') {
+    return false
+  }
+
+  const candidate = payload as Partial<CameraConnectionInfoPayload>
+  return (
+    isValidRoomId(candidate.roomId) &&
+    typeof candidate.viewerSocketId === 'string' &&
+    candidate.viewerSocketId.length > 0 &&
+    typeof candidate.connectionType === 'string' &&
+    CONNECTION_TYPES.has(candidate.connectionType)
+  )
 }
 
 function isSignalPayload(payload: unknown): payload is SignalPayload {
@@ -251,15 +303,12 @@ async function handleJoinRoom(io: Server, socket: Socket, payload: unknown): Pro
     socket.join(payload.roomId)
     socket.emit('room-state', toPublicRoomState(payload.roomId))
 
-    for (const viewerSocketId of listViewers(payload.roomId)) {
-      socket.emit('viewer-joined', { viewerSocketId })
-    }
-
     emitRoomState(io, payload.roomId)
     return
   }
 
-  const result = joinViewer(payload.roomId, socket.id, maxViewers)
+  const deviceName = payload.deviceName?.trim() || undefined
+  const result = joinViewer(payload.roomId, socket.id, maxViewers, deviceName)
   if (!result.ok) {
     sendRoomError(socket, result.reason)
     return
@@ -270,7 +319,7 @@ async function handleJoinRoom(io: Server, socket: Socket, payload: unknown): Pro
 
   const cameraSocketId = getRoom(payload.roomId)?.cameraSocketId
   if (cameraSocketId) {
-    io.to(cameraSocketId).emit('viewer-joined', { viewerSocketId: socket.id })
+    io.to(cameraSocketId).emit('viewer-joined', { viewerSocketId: socket.id, deviceName })
   }
 
   emitRoomState(io, payload.roomId)
@@ -338,6 +387,48 @@ function handleCameraSwitchFailed(io: Server, socket: Socket, payload: unknown):
   })
 }
 
+function handleVideoQualityPreference(io: Server, socket: Socket, payload: unknown): void {
+  if (!isVideoQualityPreferencePayload(payload)) {
+    sendRoomError(socket, 'set-video-quality 参数无效')
+    return
+  }
+
+  const client = getClient(socket.id)
+  if (!client || client.role !== 'viewer' || client.roomId !== payload.roomId) {
+    sendRoomError(socket, '当前连接尚未加入该房间或为采集端')
+    return
+  }
+
+  client.videoQualityPreference = payload.preference
+  const cameraSocketId = getRoom(client.roomId)?.cameraSocketId
+  if (cameraSocketId) {
+    io.to(cameraSocketId).emit('viewer-video-quality', {
+      viewerSocketId: socket.id,
+      preference: payload.preference
+    })
+  }
+}
+
+function handleCameraConnectionInfo(io: Server, socket: Socket, payload: unknown): void {
+  if (!isCameraConnectionInfoPayload(payload)) {
+    return
+  }
+
+  const camera = getClient(socket.id)
+  if (!camera || camera.role !== 'camera' || camera.roomId !== payload.roomId) {
+    return
+  }
+
+  const viewer = getClient(payload.viewerSocketId)
+  if (!viewer || viewer.role !== 'viewer' || viewer.roomId !== camera.roomId) {
+    return
+  }
+
+  io.to(payload.viewerSocketId).emit('camera-connection-info', {
+    connectionType: payload.connectionType
+  })
+}
+
 function handleSignal(io: Server, socket: Socket, payload: unknown): void {
   if (!isSignalPayload(payload)) {
     sendRoomError(socket, 'signal 参数无效')
@@ -389,6 +480,8 @@ export function registerSocketHandlers(io: Server): void {
     socket.on('camera-catalog', (payload) => handleCameraCatalog(io, socket, payload))
     socket.on('switch-camera', (payload) => handleSwitchCamera(io, socket, payload))
     socket.on('camera-switch-failed', (payload) => handleCameraSwitchFailed(io, socket, payload))
+    socket.on('set-video-quality', (payload) => handleVideoQualityPreference(io, socket, payload))
+    socket.on('camera-connection-info', (payload) => handleCameraConnectionInfo(io, socket, payload))
     socket.on('camera-room-clock', (payload) => handleCameraRoomClock(socket, payload))
     socket.on('camera-telemetry', (payload) => handleCameraTelemetry(socket, payload))
     socket.on('disconnect', () => handleDisconnect(io, socket))

@@ -5,7 +5,7 @@ export function App() {
   return (
     <>
       <header className="topbar">
-        <Link to="/viewer/home" className="brand">Home Surveillance</Link>
+        <Link to="/viewer/home" className="brand">家庭监控</Link>
       </header>
       <AppRoutes />
     </>

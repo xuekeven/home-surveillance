@@ -1,5 +1,9 @@
 import SimplePeer from 'simple-peer'
 import { apiIceServersUrl, appConfig, type IceServer } from '../config'
+import {
+  getVideoQualityProfile,
+  type VideoQualityPreference
+} from './videoQualityPreference'
 
 export type PeerInstance = SimplePeer.Instance
 
@@ -119,25 +123,31 @@ export async function getIceServers(): Promise<IceServer[]> {
 
 /** 采集端摄像头采集约束（ideal，终端可按性能降级） */
 export const CAMERA_CAPTURE_VIDEO_CONSTRAINTS = {
-  facingMode: 'user' as const,
+  facingMode: 'environment' as const,
   width: { ideal: 1920, min: 640 },
   height: { ideal: 1080, min: 360 },
-  frameRate: { ideal: 30, max: 60 }
+  frameRate: { min: 30, ideal: 30, max: 60 }
 }
 
 const SWITCH_CAMERA_VIDEO_CONSTRAINTS = {
   width: { ideal: 1920, min: 640 },
   height: { ideal: 1080, min: 360 },
-  frameRate: { ideal: 30, max: 60 }
+  frameRate: { min: 30, ideal: 30, max: 60 }
 }
 
-const OUTGOING_VIDEO_MAX_BITRATE_BPS = 6_000_000
-const OUTGOING_VIDEO_MAX_FRAMERATE = 30
+const RESOLUTION_BITRATES: Record<number, number> = {
+  360: 900_000,
+  480: 1_500_000,
+  720: 4_000_000,
+  1080: 8_000_000,
+  1440: 16_000_000,
+  2160: 30_000_000
+}
 
-function preferVideoDetail(stream: MediaStream): MediaStream {
+function preferSmoothVideo(stream: MediaStream): MediaStream {
   for (const track of stream.getVideoTracks()) {
     try {
-      track.contentHint = 'detail'
+      track.contentHint = 'motion'
     } catch {
       // Older WebViews may expose contentHint as read-only or not support it.
     }
@@ -145,38 +155,70 @@ function preferVideoDetail(stream: MediaStream): MediaStream {
   return stream
 }
 
-/** 在协商完成后尽量抬高发送端视频码率上限（最终仍受采集与网络影响） */
-export async function boostOutgoingVideoEncodingForPeers(peers: Iterable<PeerInstance>): Promise<void> {
-  await Promise.all(
-    [...peers].map(async (peer) => {
-      const rtcPeer = peer as PeerInstance & { _pc?: RTCPeerConnection }
-      const pc = rtcPeer._pc
-      if (!pc) {
-        return
-      }
+/** 尽量让摄像头源满足所选项；ideal 约束不会因硬件不支持 4K/90 帧而中断现有视频。 */
+export async function applyVideoQualityPreferenceToTrack(
+  track: MediaStreamTrack,
+  preference: VideoQualityPreference
+): Promise<void> {
+  const profile = getVideoQualityProfile(preference)
+  try {
+    track.contentHint = profile.mode === 'frame-rate' ? 'motion' : 'detail'
+  } catch {
+    // Older WebViews may not support contentHint.
+  }
 
-      const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
-      if (!sender) {
-        return
-      }
-
-      try {
-        const params = sender.getParameters()
-        if (!params.encodings || params.encodings.length === 0) {
-          params.encodings = [{}]
-        }
-
-        const enc = params.encodings[0]
-        enc.maxBitrate = Math.max(enc.maxBitrate ?? 0, OUTGOING_VIDEO_MAX_BITRATE_BPS)
-        enc.maxFramerate = OUTGOING_VIDEO_MAX_FRAMERATE
-        enc.scaleResolutionDownBy = 1
-        params.degradationPreference = 'maintain-resolution'
-        await sender.setParameters(params)
-      } catch {
-        // 协商未完成或不支持 setParameters 时忽略
-      }
+  if (profile.mode === 'frame-rate') {
+    await track.applyConstraints({
+      width: { ideal: 3840 },
+      height: { ideal: 2160 },
+      frameRate: { ideal: profile.value, max: profile.value }
     })
-  )
+    return
+  }
+
+  await track.applyConstraints({
+    width: { ideal: Math.round(profile.value * 16 / 9) },
+    height: { ideal: profile.value },
+    frameRate: { ideal: 90, max: 90 }
+  })
+}
+
+/** 对单个观看端设置编码降级策略；最终实际值仍受摄像头、浏览器和网络能力限制。 */
+export async function configureOutgoingVideoEncoding(
+  peer: PeerInstance,
+  preference: VideoQualityPreference,
+  videoTrack?: MediaStreamTrack
+): Promise<void> {
+  const rtcPeer = peer as PeerInstance & { _pc?: RTCPeerConnection }
+  const sender = rtcPeer._pc?.getSenders().find((entry) => entry.track?.kind === 'video')
+  if (!sender) return
+
+  try {
+    const params = sender.getParameters()
+    if (!params.encodings || params.encodings.length === 0) params.encodings = [{}]
+
+    const profile = getVideoQualityProfile(preference)
+    const encoding = params.encodings[0]
+    if (profile.mode === 'frame-rate') {
+      encoding.maxFramerate = profile.value
+      encoding.scaleResolutionDownBy = 1
+      encoding.maxBitrate = 30_000_000
+      params.degradationPreference = 'maintain-framerate'
+    } else {
+      const settings = (videoTrack ?? sender.track)?.getSettings()
+      const sourceShortSide = Math.min(
+        settings?.width ?? profile.value,
+        settings?.height ?? profile.value
+      )
+      encoding.scaleResolutionDownBy = Math.max(1, sourceShortSide / profile.value)
+      delete encoding.maxFramerate
+      encoding.maxBitrate = RESOLUTION_BITRATES[profile.value] ?? 8_000_000
+      params.degradationPreference = 'maintain-resolution'
+    }
+    await sender.setParameters(params)
+  } catch {
+    // 协商未完成或浏览器不支持这些编码参数时，继续使用浏览器自动策略。
+  }
 }
 
 /** 观看端上行麦克风（仅音频） */
@@ -191,23 +233,58 @@ export async function getViewerMicMediaStream(): Promise<MediaStream> {
   })
 }
 
-/** 采集端首次获取音视频；麦克风失败时降级为仅视频，避免整页不可用（默认前置摄像头） */
+function cameraDevicePriority(label: string): number {
+  const value = label.toLowerCase()
+  if (/超广角|ultra[\s-]*wide/.test(value)) return 0
+  if (/双广角|dual[\s-]*wide/.test(value)) return 1
+  if (/后置|背面|rear|back|environment/.test(value)) return 2
+  if (/前置|正面|front|user|facetime/.test(value)) return 3
+  return 4
+}
+
+/** 按采集偏好排序：后置超广角 > 后置双广角 > 后置相机 > 前置相机。 */
+export function sortVideoInputDevices(devices: MediaDeviceInfo[]): MediaDeviceInfo[] {
+  return devices
+    .map((device, index) => ({ device, index }))
+    .sort((a, b) => cameraDevicePriority(a.device.label) - cameraDevicePriority(b.device.label) || a.index - b.index)
+    .map(({ device }) => device)
+}
+
+/** 采集端首次获取音视频；麦克风失败时降级为仅视频，并选用优先级最高的后置镜头。 */
 export async function getCameraCaptureStream(): Promise<MediaStream> {
   const audio = {
     echoCancellation: true,
     noiseSuppression: true,
     autoGainControl: true
   }
+  let initialStream: MediaStream
   try {
-    return preferVideoDetail(await navigator.mediaDevices.getUserMedia({
+    initialStream = preferSmoothVideo(await navigator.mediaDevices.getUserMedia({
       video: CAMERA_CAPTURE_VIDEO_CONSTRAINTS,
       audio
     }))
   } catch {
-    return preferVideoDetail(await navigator.mediaDevices.getUserMedia({
+    initialStream = preferSmoothVideo(await navigator.mediaDevices.getUserMedia({
       video: CAMERA_CAPTURE_VIDEO_CONSTRAINTS,
       audio: false
     }))
+  }
+
+  try {
+    const preferred = sortVideoInputDevices(await listVideoInputDevices())[0]
+    const currentId = initialStream.getVideoTracks()[0]?.getSettings().deviceId
+    if (!preferred?.deviceId || preferred.deviceId === currentId) return initialStream
+
+    const preferredVideo = await getCameraVideoMediaStreamByDeviceId(preferred.deviceId)
+    const videoTrack = preferredVideo.getVideoTracks()[0]
+    if (!videoTrack) {
+      preferredVideo.getTracks().forEach((track) => track.stop())
+      return initialStream
+    }
+    initialStream.getVideoTracks().forEach((track) => track.stop())
+    return preferSmoothVideo(new MediaStream([videoTrack, ...initialStream.getAudioTracks()]))
+  } catch {
+    return initialStream
   }
 }
 
@@ -267,12 +344,12 @@ export async function replaceOutgoingVideoTrackForPeers(
 
 export async function getCameraVideoMediaStreamByDeviceId(deviceId: string): Promise<MediaStream> {
   try {
-    return preferVideoDetail(await navigator.mediaDevices.getUserMedia({
+    return preferSmoothVideo(await navigator.mediaDevices.getUserMedia({
       video: { ...SWITCH_CAMERA_VIDEO_CONSTRAINTS, deviceId: { exact: deviceId } },
       audio: false
     }))
   } catch {
-    return preferVideoDetail(await navigator.mediaDevices.getUserMedia({
+    return preferSmoothVideo(await navigator.mediaDevices.getUserMedia({
       video: { ...SWITCH_CAMERA_VIDEO_CONSTRAINTS, deviceId: { ideal: deviceId } },
       audio: false
     }))

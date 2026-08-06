@@ -23,10 +23,6 @@ export function CameraDeviceToolbar({
   disabled,
   onSelectDevice
 }: CameraDeviceToolbarProps) {
-  if (devices.length <= 1) {
-    return null
-  }
-
   const selectValue = activeCameraId || devices[0]?.deviceId || ''
 
   return (
@@ -34,11 +30,12 @@ export function CameraDeviceToolbar({
       <label htmlFor={`${idPrefix}-camera-device`}>{label}</label>
       <select
         id={`${idPrefix}-camera-device`}
-        disabled={disabled || switchingCamera}
+        disabled={disabled || switchingCamera || devices.length === 0}
         value={selectValue}
         onChange={(event) => onSelectDevice(event.target.value)}
         aria-busy={switchingCamera}
       >
+        {devices.length === 0 ? <option value="">暂无可用摄像头</option> : null}
         {devices.map((device) => (
           <option key={device.deviceId} value={device.deviceId}>
             {device.label}

@@ -17,6 +17,11 @@ import {
   SOCKET_HANDSHAKE_STALL_HINT
 } from '../shared/socket'
 import type { ConnectionStatus } from '../shared/status'
+import { getViewerDeviceName } from '../shared/deviceName'
+import {
+  DEFAULT_VIDEO_QUALITY_PREFERENCE,
+  type VideoQualityPreference
+} from '../shared/videoQualityPreference'
 import {
   sampleWebRtcLinkStats,
   type WebRtcLinkStats,
@@ -47,6 +52,10 @@ interface CameraSwitchFailedMessage {
   message: string
 }
 
+interface CameraConnectionInfoMessage {
+  connectionType: string
+}
+
 interface RoomClockMessage {
   ts: number
 }
@@ -63,11 +72,15 @@ export function useViewerRoom(roomId: string) {
   const [cameraOnline, setCameraOnline] = useState(false)
   const [viewerCount, setViewerCount] = useState(0)
   const [linkStats, setLinkStats] = useState<WebRtcLinkStats>()
+  const [cameraConnectionType, setCameraConnectionType] = useState<string>()
   const [cameraTemperatureC, setCameraTemperatureC] = useState<number | null>()
 
   const [cameraDevices, setCameraDevices] = useState<CameraDeviceOption[]>([])
   const [activeCameraId, setActiveCameraId] = useState('')
   const [switchingCamera, setSwitchingCamera] = useState(false)
+  const [videoQualityPreference, setVideoQualityPreferenceState] = useState<VideoQualityPreference>(
+    DEFAULT_VIDEO_QUALITY_PREFERENCE
+  )
 
   const socketRef = useRef<Socket | null>(null)
   const peerRef = useRef<PeerInstance | null>(null)
@@ -80,6 +93,7 @@ export function useViewerRoom(roomId: string) {
   const micDesiredRef = useRef(false)
   const statsSnapshotRef = useRef<WebRtcStatsSnapshot | undefined>(undefined)
   const statsTimerRef = useRef<number | null>(null)
+  const videoQualityPreferenceRef = useRef<VideoQualityPreference>(DEFAULT_VIDEO_QUALITY_PREFERENCE)
 
   const [dialogMicOn, setDialogMicOn] = useState(false)
   const [pushMicHeld, setPushMicHeld] = useState(false)
@@ -201,6 +215,9 @@ export function useViewerRoom(roomId: string) {
     peerRef.current = peer
 
     peer.on('signal', (signal) => {
+      if (peerRef.current !== peer) {
+        return
+      }
       socketRef.current?.emit('signal', {
         roomId,
         to: cameraSocketId,
@@ -209,22 +226,34 @@ export function useViewerRoom(roomId: string) {
     })
 
     peer.on('stream', (stream) => {
+      if (peerRef.current !== peer) {
+        return
+      }
       remoteStreamRef.current = stream
       setRemoteStream(stream)
       setStatus('connected')
     })
 
     peer.on('connect', () => {
+      if (peerRef.current !== peer) {
+        return
+      }
       setStatus('connected')
       startLinkStats(peer)
       void syncViewerUpstreamMic()
     })
 
     peer.on('close', () => {
+      if (peerRef.current !== peer) {
+        return
+      }
       setStatus('disconnected')
     })
 
     peer.on('error', (peerError) => {
+      if (peerRef.current !== peer) {
+        return
+      }
       if (isBenignPeerTeardownError(peerError)) {
         setStatus('disconnected')
         return
@@ -271,10 +300,14 @@ export function useViewerRoom(roomId: string) {
         clearHandshakeWatchdog()
         setSocketConnected(true)
         setStatus('waiting-camera')
-        socket.emit('join-room', {
-          roomId,
-          role: 'viewer',
-          token: appConfig.roomToken
+        void getViewerDeviceName().then((deviceName) => {
+          if (!socket.connected) return
+          socket.emit('join-room', {
+            roomId,
+            role: 'viewer',
+            token: appConfig.roomToken,
+            deviceName
+          })
         })
       })
 
@@ -298,6 +331,10 @@ export function useViewerRoom(roomId: string) {
       })
 
       socket.on('room-state', ({ hasCamera, viewerCount: nextViewerCount }: RoomStateMessage) => {
+        socket.emit('set-video-quality', {
+          roomId,
+          preference: videoQualityPreferenceRef.current
+        })
         setCameraOnline(hasCamera)
         setViewerCount(nextViewerCount)
         if (!hasCamera && !remoteStreamRef.current) {
@@ -316,6 +353,10 @@ export function useViewerRoom(roomId: string) {
         setError(message)
       })
 
+      socket.on('camera-connection-info', ({ connectionType }: CameraConnectionInfoMessage) => {
+        setCameraConnectionType(connectionType)
+      })
+
       socket.on('signal', ({ from, signal }: SignalMessage) => {
         const peer = ensurePeer(from)
         peer.signal(signal)
@@ -325,6 +366,7 @@ export function useViewerRoom(roomId: string) {
         setCameraOnline(false)
         setCameraTemperatureC(undefined)
         setCameraClockSkewMs(null)
+        setCameraConnectionType(undefined)
         destroyPeer()
         setCameraDevices([])
         setActiveCameraId('')
@@ -378,6 +420,18 @@ export function useViewerRoom(roomId: string) {
     [activeCameraId, roomId, switchingCamera]
   )
 
+
+  const setVideoQualityPreference = useCallback(
+    (preference: VideoQualityPreference) => {
+      videoQualityPreferenceRef.current = preference
+      setVideoQualityPreferenceState(preference)
+      const socket = socketRef.current
+      if (socket?.connected) {
+        socket.emit('set-video-quality', { roomId, preference })
+      }
+    },
+    [roomId]
+  )
   const stop = useCallback(() => {
     if (socketHandshakeWatchdogRef.current) {
       clearTimeout(socketHandshakeWatchdogRef.current)
@@ -400,6 +454,7 @@ export function useViewerRoom(roomId: string) {
     setViewerCount(0)
     setCameraTemperatureC(undefined)
     setCameraClockSkewMs(null)
+    setCameraConnectionType(undefined)
     setStatus('idle')
   }, [destroyPeer])
 
@@ -423,6 +478,7 @@ export function useViewerRoom(roomId: string) {
     cameraOnline,
     viewerCount,
     linkStats,
+    cameraConnectionType,
     cameraTemperatureC,
     dialogMicOn,
     setDialogMicOn,
@@ -434,6 +490,8 @@ export function useViewerRoom(roomId: string) {
     switchRemoteCamera,
     cameraClockSkewMs,
     restart,
+    videoQualityPreference,
+    setVideoQualityPreference,
     stop
   }
 }

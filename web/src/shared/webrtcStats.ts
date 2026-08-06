@@ -23,7 +23,10 @@ export interface WebRtcLinkStats {
   framesPerSecond?: number
   codec?: string
   localCandidateType?: string
+  localAddress?: string
   remoteCandidateType?: string
+  remoteAddress?: string
+  ipVersion?: 'IPv4' | 'IPv6'
   protocol?: string
   qualityLimitationReason?: string
   implementation?: string
@@ -41,6 +44,16 @@ function asNumber(value: unknown): number | undefined {
 
 function asString(value: unknown): string | undefined {
   return typeof value === 'string' && value ? value : undefined
+}
+
+function inferIpVersion(...addresses: Array<string | undefined>): 'IPv4' | 'IPv6' | undefined {
+  if (addresses.some((address) => address?.includes(':'))) {
+    return 'IPv6'
+  }
+  if (addresses.some((address) => address?.includes(".") && !address.endsWith(".local"))) {
+    return 'IPv4'
+  }
+  return undefined
 }
 
 function toRecord(value: unknown): StatsRecord | undefined {
@@ -226,7 +239,13 @@ export async function sampleWebRtcLinkStats(
       framesPerSecond: asNumber(video.framesPerSecond),
       codec: asString(codec?.mimeType)?.replace(/^video\//i, ''),
       localCandidateType: asString(localCandidate?.candidateType),
+      localAddress: asString(localCandidate?.address) ?? asString(localCandidate?.ip),
       remoteCandidateType: asString(remoteCandidate?.candidateType),
+      remoteAddress: asString(remoteCandidate?.address) ?? asString(remoteCandidate?.ip),
+      ipVersion: inferIpVersion(
+        asString(localCandidate?.address) ?? asString(localCandidate?.ip),
+        asString(remoteCandidate?.address) ?? asString(remoteCandidate?.ip)
+      ),
       protocol: asString(pair?.protocol) ?? asString(localCandidate?.protocol),
       qualityLimitationReason: asString(video.qualityLimitationReason),
       implementation:

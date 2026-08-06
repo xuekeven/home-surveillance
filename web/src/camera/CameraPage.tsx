@@ -6,13 +6,18 @@ import { SpeakerOutputToolbar } from '../shared/speakerOutputToolbar'
 import { FaceAnalysisOverlayLazy } from '../shared/faceAnalysisOverlayLazy'
 import { VideoClockOverlay } from '../shared/VideoClockOverlay'
 import { statusLabel } from '../shared/status'
-import { formatDeviceTemperature } from '../shared/deviceTemperature'
 import { ROOM_MISSING_MESSAGE } from '../shared/roomJoinMessages'
 import { useFamilyMembers } from '../shared/useFamilyMembers'
 import { useRoomStrangerAlert } from '../shared/useRoomStrangerAlert'
 import { WebRtcStatsPanel } from '../shared/WebRtcStatsPanel'
 import { appConfig } from '../config'
 import { useCameraRoom } from './useCameraRoom'
+
+function formatCaptureQuality(settings: MediaTrackSettings | undefined): string {
+  if (!settings?.width || !settings.height) return '--'
+  const frames = settings.frameRate ? ' 帧数 ' + Math.round(settings.frameRate) : ''
+  return '像素 ' + settings.width + '×' + settings.height + frames
+}
 
 export function CameraPage() {
   const { roomId = 'home' } = useParams()
@@ -28,10 +33,7 @@ export function CameraPage() {
     cameraDevices,
     activeCameraId,
     switchingCamera,
-    deviceTemperatureC,
-    switchCamera,
-    restart,
-    stop
+    switchCamera
   } = useCameraRoom(roomId)
 
   const {
@@ -55,14 +57,34 @@ export function CameraPage() {
   return (
     <main className="page">
       <section className="panel">
-        <div className="eyebrow">Camera</div>
+        <div className="eyebrow">采集端</div>
         <h1>采集端</h1>
         <p className="muted">房间：{roomId}</p>
 
         {error ? <div className="alert video-above-alert">{error}</div> : null}
 
         {!hideCameraUi ? (
-          <div className="video-face-stack">
+          <div className="device-controls-block camera-device-controls">
+            <CameraDeviceToolbar
+              idPrefix="camera"
+              label="本端摄像头"
+              devices={cameraDevices}
+              activeCameraId={activeCameraId}
+              switchingCamera={switchingCamera}
+              onSelectDevice={(deviceId) => void switchCamera(deviceId)}
+            />
+
+            <SpeakerOutputToolbar
+              idPrefix="camera"
+              devices={speakerDevices}
+              selectedDeviceId={selectedSpeakerId}
+              onSelectDevice={setSelectedSpeakerId}
+            />
+          </div>
+        ) : null}
+
+        {!hideCameraUi ? (
+          <div className="video-face-stack fitted-video-stack">
             <video ref={videoRef} className="video" muted playsInline autoPlay />
             <VideoClockOverlay variant="camera" active={Boolean(localStream)} />
             {Boolean(localStream) && strangerFaceAlertOn && familyMembersState.ready ? (
@@ -85,40 +107,17 @@ export function CameraPage() {
 
         {!hideCameraUi ? (
           <>
-            <div className="grid">
+            <div className="grid camera-status-grid">
               <StatusItem label="页面安全上下文" value={isSecureContext ? '是' : '否'} />
               <StatusItem label="信令连接" value={socketConnected ? '已连接' : '未连接'} />
               <StatusItem label="采集端状态" value={statusLabel(status)} />
-              <StatusItem label="采集端温度" value={formatDeviceTemperature(deviceTemperatureC)} />
-              <StatusItem label="正在观看" value={`${viewers.length}`} />
               <StatusItem
                 label="麦克风"
                 value={localStream?.getAudioTracks().some((t) => t.readyState === 'live') ? '已采集' : '未采集'}
               />
+              <StatusItem label="本地采集画质" value={formatCaptureQuality(captureSettings)} />
             </div>
 
-            <div className="device-controls-block">
-              <CameraDeviceToolbar
-                idPrefix="camera"
-                devices={cameraDevices}
-                activeCameraId={activeCameraId}
-                switchingCamera={switchingCamera}
-                onSelectDevice={(deviceId) => void switchCamera(deviceId)}
-              />
-
-              <SpeakerOutputToolbar
-                idPrefix="camera"
-                devices={speakerDevices}
-                selectedDeviceId={selectedSpeakerId}
-                onSelectDevice={setSelectedSpeakerId}
-              />
-
-            </div>
-
-            <div className="actions">
-              <button onClick={() => void restart()}>重新启动采集</button>
-              <button className="secondary" onClick={stop}>停止当前采集</button>
-            </div>
           </>
         ) : null}
       </section>
@@ -127,13 +126,24 @@ export function CameraPage() {
         <section className="panel">
           <h2>观看端连接</h2>
           {viewers.length === 0 ? (
-            <p className="muted">暂无观看端，正在等待 viewer 加入。</p>
+            <p className="muted">暂无观看端，正在等待观看端加入。</p>
           ) : (
             <ul className="list">
-              {viewers.map((viewer) => (
+              {viewers.map((viewer, index) => {
+                const duplicateNumber = viewer.deviceName
+                  ? viewers.slice(0, index + 1).filter((item) => item.deviceName === viewer.deviceName).length
+                  : 1
+                const duplicateCount = viewer.deviceName
+                  ? viewers.filter((item) => item.deviceName === viewer.deviceName).length
+                  : 0
+                const displayName = viewer.deviceName
+                  ? `${viewer.deviceName}${duplicateCount > 1 ? `（${duplicateNumber}）` : ''}`
+                  : `观看端 ${index + 1}`
+
+                return (
                 <li key={viewer.socketId} className="viewer-link-item">
                   <div className="viewer-link-summary">
-                    <span>{viewer.socketId}</span>
+                    <span>{displayName}</span>
                     <strong>{statusLabel(viewer.status)}</strong>
                     {viewerInboundAudio[viewer.socketId] ? (
                       <em className="viewer-return-audio">对讲上行</em>
@@ -141,14 +151,12 @@ export function CameraPage() {
                   </div>
                   <WebRtcStatsPanel
                     stats={viewer.linkStats}
-                    capture={{
-                      width: captureSettings?.width,
-                      height: captureSettings?.height,
-                      frameRate: captureSettings?.frameRate
-                    }}
+                    viewerLayout
+                    localAddressLabel="采集端连接 IP"
                   />
                 </li>
-              ))}
+                )
+              })}
             </ul>
           )}
         </section>
