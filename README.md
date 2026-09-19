@@ -125,7 +125,7 @@ WebRTC 视频：
 
 项目使用仓库根目录的 `.env` 作为单一配置来源，该文件已被 Git 忽略。服务端启动时读取它，`pnpm dev` 会把它传给 server 和 Vite，`pnpm build:prod` 会在构建时把对应值注入前端。配置模板见 [.env.example](.env.example)。
 
-建议使用 Node.js 20 LTS 或更新的 LTS 版本。首次启动：
+当前 Vite 8 要求 Node.js `^20.19.0 || >=22.12.0`；建议使用满足该范围的当前 LTS 版本。首次启动：
 
 ```bash
 cp .env.example .env
@@ -322,16 +322,18 @@ no-cli
 | --- | ---: | ---: |
 | 约 2.5 Mbps（常见 720p） | 约 70 组 | 40～50 组 |
 | 约 4 Mbps（常规 1080p） | 约 45 组 | 25～30 组 |
-| 6 Mbps（高质量 1080p） | 约 30 组 | 18～22 组 |
+| 约 8 Mbps（代码中的 1080p 分辨率档上限） | 约 22 组 | 12～16 组 |
+| 约 16 Mbps（1440p 分辨率档上限） | 约 11 组 | 6～8 组 |
+| 约 30 Mbps（2160p 或帧率优先档上限） | 约 6 组 | 3～4 组 |
 
-当前代码将每个观看端的视频发送上限设置为 **6 Mbps**，见 [web/src/shared/rtc.ts](web/src/shared/rtc.ts)。因此，在无法预先保证 P2P 成功、需要按所有连接都经 TURN 设计时，建议把这台实例的容量按 **20 组 1080p** 规划，30 组只作为理论值，不作为生产承诺。
+当前代码不是固定 6 Mbps：分辨率优先档分别设置约 0.9、1.5、4、8、16、30 Mbps 的编码上限；帧率优先档统一允许最高 30 Mbps。默认偏好为 30 fps，但浏览器会根据采集能力、网络与拥塞控制选择实际码率，设置值不是带宽承诺。容量规划必须以诊断面板和 coturn 的实测流量为准。
 
 估算还需考虑以下条件：
 
 - 表中的“单路码率”应以采集端和观看端诊断面板显示的实际发送/接收码率为准，而不是只看分辨率。
 - 如果阿里云套餐的 200 Mbps 限制按公网入站与出站流量合计，而非各方向独立限制，TURN 路数需在表中结果基础上大致减半。
 - “峰值带宽”不等于持续保证带宽，跨运营商路由、UDP 丢包和高峰期抖动都会减少可用路数。
-- 一路 6 Mbps TURN 视频约产生 2.7 GB/小时、1.94 TB/月的公网出站流量；20 路全天运行约 39 TB/月。需先核对实例流量包和超额费用，实际成本通常会比 CPU 更早成为限制。
+- 作为换算参考，一路持续 6 Mbps 的 TURN 视频约产生 2.7 GB/小时、1.94 TB/月的公网出站流量；实际应代入诊断面板中的码率和 TURN 中继占比。需先核对实例流量包和超额费用，实际成本通常会比 CPU 更早成为限制。
 - 当前项目不录制视频，40 GiB 系统盘可以承载应用和少量陌生人截图，但不适合保存监控录像。
 - `MAX_VIEWERS_PER_ROOM` 限制的是单个房间的观看端数量，不是全局房间数量；当前服务没有全局房间数硬限制。
 
@@ -347,7 +349,7 @@ http://127.0.0.1:3333/surveillance/healthz
 http://127.0.0.1:3333/surveillance/api/ice-servers
 https://www.example.com/surveillance/camera/home
 https://www.example.com/surveillance/viewer/home
-https://www.example.com/surveillance/socket.io/
+https://www.example.com/surveillance/socket.io/?EIO=4&transport=polling
 ```
 
 随后在 `/surveillance/admin` 创建并启用房间，再用同一个 `roomId` 打开采集端和观看端。最后检查界面中的 ICE 路径、发送/接收码率、分辨率、帧率、RTT、丢包和抖动；在 P2P 不通的网络中应看到 `relay` 路径。
@@ -383,8 +385,8 @@ https://www.example.com/surveillance/socket.io/
 | 路径 | 说明 |
 | --- | --- |
 | `/viewer/:roomId` | 观看端 |
-| `/camera/:roomId` | 采集端（摄像头 + 人脸叠加可选） |
-| `/admin` | 后台（须配置 `ADMIN_TOKEN`） |
+| `/camera/:roomId` | 采集端；房间开启陌生人告警时会在浏览器内运行无可见框的人脸分析 |
+| `/admin` | 后台页面；管理 API 须配置 `ADMIN_TOKEN`，token 保存在当前标签页的 sessionStorage |
 | `/` | 默认重定向至 `/viewer/home` |
 
 路由定义见 [web/src/routes.tsx](web/src/routes.tsx)；`PUBLIC_BASE_PATH` / `VITE_PUBLIC_BASE_PATH` 会为上述路径加前缀。
@@ -401,10 +403,11 @@ https://www.example.com/surveillance/socket.io/
 4. 传输规格正常但码率低、丢包或抖动高：画面会出现马赛克、涂抹或短时模糊，重点检查 Wi-Fi、移动网络和 TURN 路径。
 5. RTT 高主要影响卡顿与交互延迟，本身不直接降低像素，但会触发 WebRTC 拥塞控制并间接降低码率。
 
-视频发送上限为每个观看端 6 Mbps，优先保持原始分辨率，目标 30 fps，并使用 `detail` 内容提示。该数值只是编码上限；界面中的“视频发送/接收码率”才是当前实际吞吐。Mesh 模式下每增加一个观看端，采集设备都要增加一路独立编码和上行流量。
+默认偏好是 30 fps。帧率优先档使用 `motion` 内容提示并优先维持帧率；分辨率优先档使用 `detail` 内容提示并按所选分辨率设置约 0.9～30 Mbps 的编码上限。浏览器不保证严格达到这些约束，界面中的“视频发送/接收码率”和实际分辨率、帧率才是当前结果。Mesh 模式下每增加一个观看端，采集设备都要增加一路 PeerConnection 和上行流量。
 
 ## 人脸流程与数据落盘（摘要）
 
+- **执行位置**：当前检测、识别、告警触发和截图合成都在浏览器端执行。采集端在房间开启告警时运行；观看端仅在用户手动开启陌生人检测时运行。服务端负责数据接口、图片落盘和企微中转，尚未进行视频解码或服务端识别。
 - **检测**：MediaPipe 人脸框；轨迹须满足「移动活体」后才作为稳定人脸参与后续逻辑。
 - **识别**：face-api 仅在 **近似正面** 姿态下与家庭成员描述向量比对；侧面或非正面轨迹不参与陌生人告警依据。
 - **告警**：调用 [POST …/api/wework/face-alert](server/src/apiRoutes.ts)；房间须在策略中开启陌生人脸告警，且受服务端冷却时间约束。
@@ -412,3 +415,5 @@ https://www.example.com/surveillance/socket.io/
 - **持久化**：家庭成员与房间策略 JSON 位于 **`server/data/`**（运行时自动创建）。
 
 面向采集端/观看端的只读接口（如家庭成员列表、房间策略）使用 **`Authorization: Bearer <ROOM_TOKEN>`**。后台接口使用 **`Bearer <ADMIN_TOKEN>`**。完整列表见 [server/src/apiRoutes.ts](server/src/apiRoutes.ts)。
+
+安全边界：`VITE_ROOM_TOKEN` 和前端兜底 ICE 配置会进入浏览器构建产物，当前 `GET …/api/ice-servers` 也不要求鉴权。因此共享房间口令与固定 TURN 凭据只适合受控的私有 MVP，不应当作长期公网秘密；对应改造项见 [TODO](docs/6.TODO.md)。
